@@ -1,0 +1,46 @@
+{
+  "machine": {
+    "cpu": "Intel(R) Core(TM) i5-10400F CPU @ 2.90GHz",
+    "cores": 12,
+    "memoryGb": 47,
+    "node": "v20.20.1",
+    "platform": "linux 7.0.0-34-generic",
+    "date": "2026-09-28T15:57:54.398Z"
+  },
+  "tenants": 10000,
+  "connections": 100,
+  "durationSeconds": 30,
+  "setup": "PostgreSQL 16 en Docker (misma máquina), isolation: schema, credenciales compartidas, pool max 20, fsync=off",
+  "results": [
+    {
+      "name": "10k tenants, caché de búsqueda",
+      "reqPerSec": 4551,
+      "latencyP50Ms": 20,
+      "latencyP99Ms": 48,
+      "requests": 136523,
+      "errors": 0,
+      "checked": 136523,
+      "wrongTenant": 0,
+      "serverRssMb": 365,
+      "serverHeapMb": 221,
+      "creation": {
+        "tenants": 10000,
+        "seconds": 54.7,
+        "p50Ms": 82,
+        "p99Ms": 154
+      }
+    },
+    {
+      "name": "10k tenants, sin caché de búsqueda",
+      "reqPerSec": 2027,
+      "latencyP50Ms": 46,
+      "latencyP99Ms": 82,
+      "requests": 60814,
+      "errors": 0,
+      "checked": 60814,
+      "wrongTenant": 0,
+      "serverRssMb": 398,
+      "serverHeapMb": 145
+    }
+  ]
+}

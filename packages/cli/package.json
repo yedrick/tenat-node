@@ -1,0 +1,76 @@
+{
+  "name": "@tenancy-node/cli",
+  "version": "0.8.0",
+  "description": "Command line interface for tenancy-node: init, install, create, migrate, run...",
+  "keywords": [
+    "multi-tenancy",
+    "multitenancy",
+    "multi-tenant",
+    "saas",
+    "tenancy",
+    "tenant",
+    "cli"
+  ],
+  "license": "MIT",
+  "homepage": "https://yedrick.github.io/tenat-node/",
+  "bugs": {
+    "url": "https://github.com/yedrick/tenat-node/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yedrick/tenat-node.git",
+    "directory": "packages/cli"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsup"
+  },
+  "dependencies": {
+    "@tenancy-node/core": "workspace:^",
+    "jiti": "^2.4.2"
+  },
+  "bin": {
+    "tenancy": "./dist/bin.js"
+  },
+  "peerDependencies": {
+    "@tenancy-node/db": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@tenancy-node/db": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@tenancy-node/db": "workspace:^",
+    "@tenancy-node/db-postgres": "workspace:^",
+    "@tenancy-node/db-mysql": "workspace:^",
+    "kysely": "^0.28.2",
+    "@tenancy-node/outbox": "workspace:^",
+    "@tenancy-node/admin-api": "workspace:^"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

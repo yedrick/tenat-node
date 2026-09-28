@@ -1,0 +1,28 @@
+{
+  "name": "tenancy-node-bench",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "micro": "tsx src/micro.ts",
+    "http": "tsx src/http.ts",
+    "load": "tsx src/load-10k.ts"
+  },
+  "dependencies": {
+    "@tenancy-node/adapter-fastify": "workspace:*",
+    "@tenancy-node/adapter-node": "workspace:*",
+    "@tenancy-node/core": "workspace:*",
+    "@tenancy-node/db": "workspace:*",
+    "@tenancy-node/db-postgres": "workspace:*",
+    "@testcontainers/postgresql": "^11.14.0",
+    "autocannon": "^8.0.0",
+    "fastify": "^5.2.0",
+    "kysely": "^0.28.2",
+    "pg": "^8.13.1",
+    "tinybench": "^3.1.1"
+  },
+  "devDependencies": {
+    "@types/autocannon": "^7.12.6",
+    "tsx": "^4.19.2"
+  }
+}

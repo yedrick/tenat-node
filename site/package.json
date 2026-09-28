@@ -1,0 +1,19 @@
+{
+  "name": "tenancy-node-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sync": "node sync-docs.mjs",
+    "api": "typedoc",
+    "dev": "pnpm sync && pnpm api && vitepress dev",
+    "build": "pnpm sync && pnpm api && vitepress build",
+    "preview": "vitepress preview"
+  },
+  "devDependencies": {
+    "typedoc": "^0.28.20",
+    "typedoc-plugin-markdown": "^4.13.1",
+    "typedoc-vitepress-theme": "^1.1.4",
+    "vitepress": "^1.6.4"
+  }
+}

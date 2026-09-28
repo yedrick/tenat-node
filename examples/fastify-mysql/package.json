@@ -1,0 +1,20 @@
+{
+  "name": "example-fastify-mysql",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "test": "vitest run --root ../.. examples/fastify-mysql"
+  },
+  "dependencies": {
+    "@tenancy-node/adapter-fastify": "workspace:*",
+    "@tenancy-node/core": "workspace:*",
+    "@tenancy-node/db": "workspace:*",
+    "@tenancy-node/db-mysql": "workspace:*",
+    "fastify": "^5.2.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "@tenancy-node/testing": "workspace:*"
+  }
+}

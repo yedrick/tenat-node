@@ -1,0 +1,58 @@
+{
+  "name": "@tenancy-node/cache-redis",
+  "version": "0.8.0",
+  "description": "Redis / Valkey cache store for tenancy-node",
+  "keywords": [
+    "multi-tenancy",
+    "multitenancy",
+    "multi-tenant",
+    "saas",
+    "tenancy",
+    "tenant",
+    "cache",
+    "redis"
+  ],
+  "license": "MIT",
+  "homepage": "https://yedrick.github.io/tenat-node/",
+  "bugs": {
+    "url": "https://github.com/yedrick/tenat-node/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yedrick/tenat-node.git",
+    "directory": "packages/cache-redis"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@tenancy-node/core": "workspace:^",
+    "ioredis": "^5.4.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

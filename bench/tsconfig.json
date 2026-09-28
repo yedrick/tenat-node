@@ -1,0 +1,6 @@
+{
+  // Sin `paths`: el benchmark mide el código compilado (dist) que se publica, no el fuente.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "types": ["node"] },
+  "include": ["src"]
+}

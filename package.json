@@ -1,0 +1,60 @@
+{
+  "name": "tenancy-node",
+  "private": true,
+  "description": "Multi-tenancy for Node.js, inspired by stancl/tenancy",
+  "license": "MIT",
+  "homepage": "https://yedrick.github.io/tenat-node/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yedrick/tenat-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yedrick/tenat-node/issues"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "tsc -p tsconfig.json && tsc -p packages/admin-ui/tsconfig.json",
+    "test": "turbo run build --output-logs=errors-only && vitest run",
+    "test:watch": "vitest",
+    "coverage": "turbo run build --output-logs=errors-only && vitest run --coverage",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "depcruise": "depcruise packages --config .dependency-cruiser.cjs",
+    "changeset": "changeset",
+    "check": "pnpm lint && pnpm typecheck && pnpm depcruise && pnpm build && pnpm test",
+    "packages:meta": "node scripts/package-meta.mjs",
+    "packages:check": "node scripts/package-meta.mjs --check && node scripts/check-packages.mjs",
+    "docs:dev": "pnpm --filter tenancy-node-site dev",
+    "docs:build": "pnpm --filter tenancy-node-site build",
+    "release": "pnpm build && pnpm packages:check && changeset publish"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@changesets/cli": "^2.27.11",
+    "@eslint/js": "^9.17.0",
+    "@testcontainers/mariadb": "^11",
+    "@testcontainers/mysql": "^11.14.0",
+    "@testcontainers/postgresql": "^11.14.0",
+    "@types/node": "^20.17.10",
+    "@types/supertest": "^7.2.1",
+    "@vitest/coverage-v8": "^2.1.8",
+    "dependency-cruiser": "^16.8.0",
+    "eslint": "^9.17.0",
+    "kysely": "^0.28.2",
+    "playwright": "^1.49.0",
+    "prettier": "^3.4.2",
+    "publint": "^0.3.24",
+    "supertest": "^7.3.0",
+    "testcontainers": "^11.14.0",
+    "tsup": "^8.3.5",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vitest": "^2.1.8"
+  }
+}

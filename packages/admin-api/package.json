@@ -1,0 +1,82 @@
+{
+  "name": "@tenancy-node/admin-api",
+  "version": "0.8.0",
+  "description": "Admin REST API for tenancy-node: auth, roles, audit, tenants, SSE progress, data explorer, webhooks, impersonation and OpenAPI",
+  "keywords": [
+    "multi-tenancy",
+    "multitenancy",
+    "multi-tenant",
+    "saas",
+    "tenancy",
+    "tenant",
+    "admin",
+    "dashboard",
+    "api"
+  ],
+  "license": "MIT",
+  "homepage": "https://yedrick.github.io/tenat-node/",
+  "bugs": {
+    "url": "https://github.com/yedrick/tenat-node/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yedrick/tenat-node.git",
+    "directory": "packages/admin-api"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@tenancy-node/core": "workspace:^",
+    "@tenancy-node/db": "workspace:^",
+    "@node-rs/argon2": "^2.0.2",
+    "@valibot/to-json-schema": "^1.0.0",
+    "valibot": "^1.0.0",
+    "kysely": "^0.28.2"
+  },
+  "devDependencies": {
+    "@tenancy-node/db-postgres": "workspace:^",
+    "@tenancy-node/outbox": "workspace:^",
+    "@tenancy-node/transport-webhook": "workspace:^",
+    "express": "^5.0.1",
+    "fastify": "^5.2.0",
+    "@tenancy-node/adapter-fastify": "workspace:^",
+    "@tenancy-node/adapter-express": "workspace:^",
+    "@types/express": "^5.0.0",
+    "@tenancy-node/admin-ui": "workspace:^"
+  },
+  "peerDependencies": {
+    "@tenancy-node/admin-ui": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@tenancy-node/admin-ui": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "machine": {
+    "cpu": "Intel(R) Core(TM) i5-10400F CPU @ 2.90GHz",
+    "cores": 12,
+    "memoryGb": 47,
+    "node": "v20.20.1",
+    "platform": "linux 7.0.0-34-generic",
+    "date": "2026-09-28T16:02:03.102Z"
+  },
+  "tenants": 1000,
+  "connections": 50,
+  "durationSeconds": 10,
+  "results": [
+    {
+      "name": "node:http sin tenancy",
+      "reqPerSec": 23240,
+      "latencyP50Ms": 1,
+      "latencyP99Ms": 4,
+      "errors": 0,
+      "wrongTenant": 0
+    },
+    {
+      "name": "node:http + withTenancy",
+      "reqPerSec": 14331,
+      "latencyP50Ms": 3,
+      "latencyP99Ms": 7,
+      "errors": 0,
+      "wrongTenant": 0
+    },
+    {
+      "name": "node:http + withTenancy (sin log por petición)",
+      "reqPerSec": 17303,
+      "latencyP50Ms": 2,
+      "latencyP99Ms": 6,
+      "errors": 0,
+      "wrongTenant": 0
+    },
+    {
+      "name": "Fastify sin tenancy",
+      "reqPerSec": 23243,
+      "latencyP50Ms": 1,
+      "latencyP99Ms": 4,
+      "errors": 0,
+      "wrongTenant": 0
+    },
+    {
+      "name": "Fastify + tenancyPlugin",
+      "reqPerSec": 12485,
+      "latencyP50Ms": 3,
+      "latencyP99Ms": 7,
+      "errors": 0,
+      "wrongTenant": 0
+    },
+    {
+      "name": "Fastify + tenancyPlugin (sin log por petición)",
+      "reqPerSec": 14266,
+      "latencyP50Ms": 3,
+      "latencyP99Ms": 7,
+      "errors": 0,
+      "wrongTenant": 0
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "../packages/adapter-express",
+    "../packages/adapter-fastify",
+    "../packages/adapter-node",
+    "../packages/admin-api",
+    "../packages/cache-memcached",
+    "../packages/cache-redis",
+    "../packages/cli",
+    "../packages/core",
+    "../packages/db",
+    "../packages/db-mssql",
+    "../packages/db-mysql",
+    "../packages/db-postgres",
+    "../packages/db-sqlite",
+    "../packages/orm-drizzle",
+    "../packages/orm-knex",
+    "../packages/orm-mikro-orm",
+    "../packages/orm-prisma",
+    "../packages/orm-sequelize",
+    "../packages/orm-typeorm",
+    "../packages/otel",
+    "../packages/outbox",
+    "../packages/prometheus",
+    "../packages/queue-bullmq",
+    "../packages/storage-s3",
+    "../packages/testing",
+    "../packages/transport-kafka",
+    "../packages/transport-nats",
+    "../packages/transport-rabbitmq",
+    "../packages/transport-redis-streams",
+    "../packages/transport-webhook"
+  ],
+  "plugin": [
+    "typedoc-plugin-markdown",
+    "typedoc-vitepress-theme"
+  ],
+  "out": "./referencia/api",
+  "docsRoot": "./",
+  "readme": "none",
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeExternals": true,
+  "hideGenerator": true,
+  "entryFileName": "index",
+  "sidebar": {
+    "autoConfiguration": true,
+    "format": "vitepress",
+    "pretty": true,
+    "collapsed": true
+  },
+  "skipErrorChecking": true,
+  "logLevel": "Warn",
+  "validation": {
+    "notExported": false,
+    "invalidLink": true,
+    "notDocumented": false
+  },
+  "entryPointStrategy": "packages",
+  "packageOptions": {
+    "entryPoints": [
+      "src/index.ts"
+    ],
+    "tsconfig": "../../site/tsconfig.typedoc.json",
+    "readme": "none",
+    "excludePrivate": true,
+    "excludeInternal": true,
+    "excludeExternals": true,
+    "validation": {
+      "notExported": false,
+      "invalidLink": true,
+      "notDocumented": false
+    }
+  },
+  "externalSymbolLinkMappings": {
+    "kysely": {
+      "*": "https://kysely-org.github.io/kysely-apidoc/"
+    }
+  }
+}

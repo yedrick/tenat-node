@@ -1,0 +1,69 @@
+{
+  "name": "@tenancy-node/orm-drizzle",
+  "version": "0.8.0",
+  "description": "Drizzle ORM integration for tenancy-node: tenancy.drizzle(schema) per tenant and a Drizzle migrator",
+  "keywords": [
+    "multi-tenancy",
+    "multitenancy",
+    "multi-tenant",
+    "saas",
+    "tenancy",
+    "tenant",
+    "orm",
+    "database",
+    "drizzle"
+  ],
+  "license": "MIT",
+  "homepage": "https://yedrick.github.io/tenat-node/",
+  "bugs": {
+    "url": "https://github.com/yedrick/tenat-node/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yedrick/tenat-node.git",
+    "directory": "packages/orm-drizzle"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@tenancy-node/core": "workspace:^",
+    "@tenancy-node/db": "workspace:^"
+  },
+  "peerDependencies": {
+    "drizzle-orm": ">=0.36"
+  },
+  "devDependencies": {
+    "drizzle-orm": "^0.38.0",
+    "pg": "^8.13.1",
+    "@types/pg": "^8.11.10",
+    "@tenancy-node/db-postgres": "workspace:^",
+    "kysely": "^0.28.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

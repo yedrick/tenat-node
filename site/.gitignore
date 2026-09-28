@@ -1,0 +1,9 @@
+# Generado por sync-docs.mjs y typedoc
+adr/
+guia/cli.md
+hoja-de-ruta.md
+referencia/api/
+public/LICENSE.txt
+.vitepress/cache/
+.vitepress/dist/
+.snippets/

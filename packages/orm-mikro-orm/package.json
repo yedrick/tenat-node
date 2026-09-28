@@ -1,0 +1,69 @@
+{
+  "name": "@tenancy-node/orm-mikro-orm",
+  "version": "0.8.0",
+  "description": "MikroORM integration for tenancy-node (ORM per tenant, forked EntityManager and migrator)",
+  "keywords": [
+    "multi-tenancy",
+    "multitenancy",
+    "multi-tenant",
+    "saas",
+    "tenancy",
+    "tenant",
+    "orm",
+    "database",
+    "mikro"
+  ],
+  "license": "MIT",
+  "homepage": "https://yedrick.github.io/tenat-node/",
+  "bugs": {
+    "url": "https://github.com/yedrick/tenat-node/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yedrick/tenat-node.git",
+    "directory": "packages/orm-mikro-orm"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@tenancy-node/core": "workspace:^",
+    "@tenancy-node/db": "workspace:^"
+  },
+  "peerDependencies": {
+    "@mikro-orm/core": ">=6.4"
+  },
+  "devDependencies": {
+    "@mikro-orm/core": "^6.6.16",
+    "@mikro-orm/postgresql": "^6.6.16",
+    "@mikro-orm/migrations": "^6.6.16",
+    "@tenancy-node/db-postgres": "workspace:^",
+    "kysely": "^0.28.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "example-express-postgres-schema",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "test": "vitest run --root ../.. examples/express-postgres-schema"
+  },
+  "dependencies": {
+    "@tenancy-node/adapter-express": "workspace:*",
+    "@tenancy-node/core": "workspace:*",
+    "@tenancy-node/db": "workspace:*",
+    "@tenancy-node/db-postgres": "workspace:*",
+    "@tenancy-node/orm-typeorm": "workspace:*",
+    "@tenancy-node/prometheus": "workspace:*",
+    "express": "^5.1.0",
+    "kysely": "^0.28.2",
+    "pg": "^8.13.1",
+    "typeorm": "^1.1.1"
+  },
+  "devDependencies": {
+    "@tenancy-node/testing": "workspace:*",
+    "@types/express": "^5.0.0",
+    "supertest": "^7.3.0",
+    "tsx": "^4.19.2"
+  }
+}
