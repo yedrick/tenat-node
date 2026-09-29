@@ -2,7 +2,7 @@
 
 Multi-tenancy para Node.js inspirado en [stancl/tenancy](https://tenancyforlaravel.com): arquitectura hexagonal, independiente del framework y con observabilidad por tenant desde el núcleo.
 
-> Estado: **0.8.0, lista para publicar** · Documentación: https://yedrick.github.io/tenat-node/ · **Fases 0 a 8** (núcleo; bases MySQL/MariaDB, PostgreSQL —por base o por schema—, SQLite y SQL Server; CLI; caché, archivos, colas y rutas HTTP; ORMs; eventos; panel de administración; telemetría y `tenancy move`). Avance en [`docs/ROADMAP.md`](docs/ROADMAP.md), decisiones en `docs/adr/`.
+> Estado: **0.8.0**, distribuida por [GitHub Releases](https://github.com/yedrick/tenat-node/releases) mientras no esté en npm (ver [Instalación](#instalación)) · Documentación: https://yedrick.github.io/tenat-node/ · **Fases 0 a 8** (núcleo; bases MySQL/MariaDB, PostgreSQL —por base o por schema—, SQLite y SQL Server; CLI; caché, archivos, colas y rutas HTTP; ORMs; eventos; panel de administración; telemetría y `tenancy move`). Avance en [`docs/ROADMAP.md`](docs/ROADMAP.md), decisiones en `docs/adr/`.
 
 ## Paquetes
 
@@ -23,6 +23,20 @@ Multi-tenancy para Node.js inspirado en [stancl/tenancy](https://tenancyforlarav
 | `@tenancy-node/transport-webhook / -rabbitmq / -redis-streams / -kafka / -nats`                   | Transportes de eventos (CloudEvents) y sus consumidores                                                                                |
 | `@tenancy-node/otel / prometheus`                                                                 | Trazas y métricas con `tenant.id`                                                                                                      |
 | `@tenancy-node/admin-api / admin-ui`                                                              | Panel de administración                                                                                                                |
+
+## Instalación
+
+Todavía no está en npm. Cada versión se publica como `.tgz` en [GitHub Releases](https://github.com/yedrick/tenat-node/releases); instala por URL los paquetes que uses (cada uno trae sus dependencias `@tenancy-node/*`):
+
+```bash
+R=https://github.com/yedrick/tenat-node/releases/download/v0.8.0
+npm install $R/tenancy-node-core-0.8.0.tgz $R/tenancy-node-db-0.8.0.tgz $R/tenancy-node-db-postgres-0.8.0.tgz $R/tenancy-node-adapter-express-0.8.0.tgz
+npm install -D $R/tenancy-node-cli-0.8.0.tgz
+```
+
+Con pnpm, agrega `blockExoticSubdeps: false` a `pnpm-workspace.yaml`.
+
+**Publicar una versión:** con la versión ya en los `package.json`, `git tag v0.8.0 && git push origin v0.8.0`. El workflow `github-release.yml` compila, verifica y crea el Release con los `.tgz`. En local, `pnpm release:github` genera lo mismo en `release/`.
 
 ## Uso rápido
 

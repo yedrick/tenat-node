@@ -15,6 +15,21 @@ Si solo quieres ver cómo funciona, salta a [Sin base de datos](#sin-base-de-dat
 
 ## Instalación
 
+::: warning Todavía no está en npm
+Mientras tanto, cada versión se publica como archivos `.tgz` en [GitHub Releases](https://github.com/yedrick/tenat-node/releases). Instala por URL solo los paquetes que uses; cada uno trae sus dependencias `@tenancy-node/*` desde el mismo Release:
+
+```bash
+R=https://github.com/yedrick/tenat-node/releases/download/v0.8.0
+npm install $R/tenancy-node-core-0.8.0.tgz $R/tenancy-node-db-0.8.0.tgz \
+  $R/tenancy-node-db-mysql-0.8.0.tgz $R/tenancy-node-adapter-fastify-0.8.0.tgz
+npm install -D $R/tenancy-node-cli-0.8.0.tgz
+```
+
+Cada archivo se llama `tenancy-node-<paquete>-<versión>.tgz`. Con **pnpm** agrega `blockExoticSubdeps: false` a `pnpm-workspace.yaml`: por defecto rechaza dependencias internas que vienen de una URL. El paso "Siguientes pasos" que imprime `tenancy init` muestra el comando de npm; usa estas URLs en su lugar.
+
+Cuando esté en npm, será:
+:::
+
 ```bash
 npm install @tenancy-node/core @tenancy-node/db @tenancy-node/db-mysql @tenancy-node/adapter-fastify
 npm install -D @tenancy-node/cli
@@ -35,13 +50,13 @@ npx tenancy create bolivar --domain=bolivar.localhost
 
 `init` detecta el motor por las dependencias de tu `package.json` (`mysql2`/`mariadb` → MySQL, `pg` → PostgreSQL, `tedious`/`mssql` → SQL Server, `better-sqlite3` → SQLite; si no encuentra ninguno, usa MySQL) y genera:
 
-| Archivo                               | Contenido                                                               |
-| ------------------------------------- | ----------------------------------------------------------------------- |
-| `tenancy.config.ts` (o `.js`/`.cjs`)  | La configuración que usan tu app y el CLI                               |
+| Archivo                               | Contenido                                                                 |
+| ------------------------------------- | ------------------------------------------------------------------------- |
+| `tenancy.config.ts` (o `.js`/`.cjs`)  | La configuración que usan tu app y el CLI                                 |
 | `src/tenancy.ts`                      | La instancia `tenancy` y un comentario con cómo conectarla a tu framework |
-| `migrations/tenant/001_productos.sql` | Migración de ejemplo para la base de cada tenant                        |
-| `migrations/central/`                 | Carpeta para tus migraciones de la base central                         |
-| `.env.example`                        | `DATABASE_URL` y `TENANCY_KEY` (con una llave nueva)                    |
+| `migrations/tenant/001_productos.sql` | Migración de ejemplo para la base de cada tenant                          |
+| `migrations/central/`                 | Carpeta para tus migraciones de la base central                           |
+| `.env.example`                        | `DATABASE_URL` y `TENANCY_KEY` (con una llave nueva)                      |
 
 Si un archivo ya existe, `init` no lo toca; usa `--force` para sobrescribirlo. `--driver=mysql|postgres|sqlite|mssql` elige el motor a mano. Con SQLite la configuración usa `sqlite()` de `@tenancy-node/db-sqlite` y la URL central `sqlite://local/central` (las bases quedan en `./data`); con SQL Server, `mssql()` de `@tenancy-node/db-mssql`.
 

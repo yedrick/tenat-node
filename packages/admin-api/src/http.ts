@@ -91,6 +91,9 @@ export function match(routes: readonly CompiledRoute[], method: string, path: st
 
 /** Lee el cuerpo JSON con un límite de tamaño. */
 export function readJson(req: IncomingMessage, limitBytes: number): Promise<unknown> {
+  // Un body parser anterior (`express.json()`, `express.text()`...) ya leyó el stream: esperar
+  // 'end' colgaría la petición para siempre. Se usa lo que ese parser dejó en `req.body`.
+  if (req.readableEnded) return new Promise((resolve) => resolve(parsedBody(req)));
   return new Promise((resolve, reject) => {
     const type = req.headers['content-type'] ?? '';
     let size = 0;
@@ -134,6 +137,17 @@ export function readJson(req: IncomingMessage, limitBytes: number): Promise<unkn
     });
     req.on('error', reject);
   });
+}
+
+function parsedBody(req: IncomingMessage): unknown {
+  const body = (req as IncomingMessage & { body?: unknown }).body;
+  if (typeof body !== 'string' && !Buffer.isBuffer(body)) return body;
+  if (body.length === 0) return undefined;
+  try {
+    return JSON.parse(body.toString('utf8'));
+  } catch {
+    throw new AdminHttpError(400, 'ADMIN_INVALID_JSON', 'The body is not valid JSON');
+  }
 }
 
 export function validate<T>(schema: v.GenericSchema<unknown, T>, value: unknown): T {

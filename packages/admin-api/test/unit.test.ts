@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import type { IncomingMessage } from 'node:http';
+import { Readable } from 'node:stream';
+import { readJson } from '../src/http.js';
 import {
   base32Decode,
   base32Encode,
@@ -60,5 +63,27 @@ describe('RateLimiter', () => {
     limiter.fail('j', 0);
     limiter.reset('j');
     expect(limiter.allowed('j', 1)).toBe(true);
+  });
+});
+
+describe('readJson', () => {
+  /** Petición cuyo stream ya consumió otro body parser (como `express.json()`). */
+  async function consumed(body: unknown): Promise<IncomingMessage> {
+    const req = Readable.from([Buffer.from('{"a":1}')]) as unknown as IncomingMessage;
+    req.headers = { 'content-type': 'application/json' };
+    for await (const _chunk of req) void _chunk;
+    Object.assign(req, { body });
+    return req;
+  }
+
+  it('uses req.body when a previous parser already read the stream', async () => {
+    await expect(readJson(await consumed({ email: 'a@b.c' }), 1024)).resolves.toEqual({
+      email: 'a@b.c',
+    });
+    await expect(readJson(await consumed('{"x":2}'), 1024)).resolves.toEqual({ x: 2 });
+    await expect(readJson(await consumed(Buffer.from('')), 1024)).resolves.toBeUndefined();
+    await expect(readJson(await consumed('nope'), 1024)).rejects.toMatchObject({
+      code: 'ADMIN_INVALID_JSON',
+    });
   });
 });

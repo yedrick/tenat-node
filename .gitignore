@@ -7,3 +7,4 @@ coverage
 .env.*
 !.env.example
 packages/cli/test/.tmp
+release

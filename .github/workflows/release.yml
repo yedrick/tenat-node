@@ -16,16 +16,27 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Sin el secreto NPM_TOKEN (todavía no hay cuenta en npm) no hace nada: los paquetes se
+    # distribuyen por GitHub Releases (github-release.yml).
+    env:
+      HAS_NPM_TOKEN: ${{ secrets.NPM_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - if: env.HAS_NPM_TOKEN != 'true'
+        run: echo "Sin NPM_TOKEN; no se publica en npm."
+      - if: env.HAS_NPM_TOKEN == 'true'
+        uses: actions/checkout@v4
+      - if: env.HAS_NPM_TOKEN == 'true'
+        uses: pnpm/action-setup@v4
+      - if: env.HAS_NPM_TOKEN == 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           registry-url: https://registry.npmjs.org
-      - run: pnpm install --frozen-lockfile
-      - uses: changesets/action@v1
+      - if: env.HAS_NPM_TOKEN == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: env.HAS_NPM_TOKEN == 'true'
+        uses: changesets/action@v1
         with:
           version: pnpm changeset version
           publish: pnpm release

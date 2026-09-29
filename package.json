@@ -31,7 +31,8 @@
     "packages:check": "node scripts/package-meta.mjs --check && node scripts/check-packages.mjs",
     "docs:dev": "pnpm --filter tenancy-node-site dev",
     "docs:build": "pnpm --filter tenancy-node-site build",
-    "release": "pnpm build && pnpm packages:check && changeset publish"
+    "release": "pnpm build && pnpm packages:check && changeset publish",
+    "release:github": "pnpm build && pnpm packages:check && node scripts/pack-release.mjs"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

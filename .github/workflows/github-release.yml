@@ -1,0 +1,40 @@
+name: GitHub Release
+
+# Al empujar un tag `v*` (por ejemplo `git push origin v0.8.0`): compila, verifica y publica los
+# paquetes como .tgz en un GitHub Release, para instalarlos por URL mientras no estén en npm.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: El tag coincide con la versión de los paquetes
+        run: |
+          version="v$(node -p "require('./packages/core/package.json').version")"
+          if [ "$version" != "$GITHUB_REF_NAME" ]; then
+            echo "El tag $GITHUB_REF_NAME no coincide con la versión de los paquetes ($version)"
+            exit 1
+          fi
+      - run: pnpm build
+      - run: pnpm packages:check
+      - run: node scripts/pack-release.mjs --out=release
+      - name: Crear el Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/*.tgz release/SHA256SUMS \
+            --title "tenancy-node $GITHUB_REF_NAME" \
+            --notes-file release/NOTES.md \
+            --verify-tag
