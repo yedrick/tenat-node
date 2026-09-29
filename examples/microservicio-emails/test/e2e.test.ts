@@ -71,8 +71,9 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')(
         ['tigre', 'admin@tigre.tuapp.com', '¡Bienvenido a tuapp, The Strongest!'],
       ]);
 
-      // Se fuerza una segunda entrega del mismo evento (lo que puede pasar con "al menos una vez")
-      await sql`UPDATE tenancy_event_outbox SET status = 'pending', available_at = now() WHERE tenant_id = 'bolivar'`.execute(
+      // Se fuerza una segunda entrega del mismo evento (lo que puede pasar con "al menos una vez").
+      // En el pasado: el relay compara con el reloj de Node, y el now() del contenedor puede ir adelantado.
+      await sql`UPDATE tenancy_event_outbox SET status = 'pending', available_at = now() - interval '1 minute' WHERE tenant_id = 'bolivar'`.execute(
         app.centralDb(),
       );
       expect((await app.outbox.relayOnce()).published).toBe(1);
