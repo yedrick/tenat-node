@@ -213,6 +213,26 @@ describe('theme', () => {
     expect((await tenancy.tenants.find('bolivar'))?.theme).toBeNull();
     expect(updates).toHaveLength(2);
   });
+
+  it('sees the new theme in the same context right after update and reset', async () => {
+    const { tenancy, seed } = createTestTenancy({ theme: { defaults: { primary: '#111111' } } });
+    await seed(['bolivar', 'tigre']);
+    await tenancy.run('bolivar', async () => {
+      expect(tenancy.theme().toCss()).toContain('--color-primary: #111111;');
+      await tenancy.theme.update('bolivar', { primary: '#E4002B' });
+      expect(tenancy.theme().toCss()).toContain('--color-primary: #E4002B;');
+      expect(tenancy.theme().toJson().primary).toBe('#E4002B');
+      await tenancy.theme.update('bolivar', { primary: '#00AA00' });
+      expect(tenancy.theme().toCss()).toContain('--color-primary: #00AA00;');
+      // Otro tenant no toca el tema del contexto.
+      await tenancy.theme.update('tigre', { primary: '#FFCC00' });
+      expect(tenancy.theme().toCss()).toContain('--color-primary: #00AA00;');
+      await tenancy.theme.reset('bolivar');
+      expect(tenancy.theme().toCss()).toContain('--color-primary: #111111;');
+    });
+    // Un contexto nuevo lee el tema guardado, como siempre.
+    expect(await tenancy.run('tigre', () => tenancy.theme().toJson().primary)).toBe('#FFCC00');
+  });
 });
 
 describe('events api', () => {

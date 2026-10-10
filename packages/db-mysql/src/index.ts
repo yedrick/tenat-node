@@ -59,7 +59,17 @@ export function mysql(options: MysqlDriverOptions = {}): DatabaseDriver {
       });
       native.on('error' as never, (error: Error) => pool.onError?.(error));
       const db = new Kysely<AnyDB>({ dialect: new MysqlDialect({ pool: native }) });
-      return { db, native, destroy: () => db.destroy() };
+      let destroying: Promise<void> | undefined;
+      const destroy = async () => {
+        // Kysely solo cierra el pool si alguna vez lo usó: una app que solo usa `tenancy.pool()`
+        // dejaría las conexiones abiertas. Se cierra el pool nativo si Kysely no lo hizo.
+        await db.destroy();
+        if ((native as unknown as { _closed?: boolean })._closed) return;
+        await new Promise<void>((resolve, reject) =>
+          native.end((error) => (error ? reject(error) : resolve())),
+        );
+      };
+      return { db, native, destroy: () => (destroying ??= destroy()) };
     },
 
     async databaseExists(admin, name) {

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
   TenantId,
   TenantNotFoundError,
@@ -32,6 +32,37 @@ export function tenantJson(t: Tenant) {
     createdAt: s.createdAt,
     updatedAt: s.updatedAt,
   };
+}
+
+/** Formatos de logo aceptados, reconocidos por su contenido (nunca SVG: puede llevar scripts). */
+const IMAGE_TYPES = [
+  { type: 'image/png', ext: 'png', test: (b: Buffer) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
+  { type: 'image/jpeg', ext: 'jpg', test: (b: Buffer) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { type: 'image/gif', ext: 'gif', test: (b: Buffer) => /^GIF8[79]a/.test(b.subarray(0, 6).toString('latin1')) },
+  { type: 'image/webp', ext: 'webp', test: (b: Buffer) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP' },
+] as const;
+
+/** Carpeta de los logos subidos desde el panel, dentro del almacenamiento del tenant. */
+const LOGO_PREFIX = 'theme/logo-';
+
+/**
+ * URL del logo para el panel. Con almacenamiento local la URL es relativa al dominio del tenant
+ * (`/tenancy/assets/...`): se completa con ese dominio para que el panel (en el dominio central)
+ * no la pida a sí mismo.
+ */
+async function logoUrlOf(
+  t: AdminContext['tenancy'],
+  tenant: Tenant,
+  logo: string | undefined,
+  domain?: string | null,
+): Promise<string | null> {
+  if (!logo) return null;
+  try {
+    const url = await t.run(tenant, () => t.storage().url(logo));
+    return url.startsWith('/') && !url.startsWith('//') && domain ? `//${domain}${url}` : url;
+  } catch {
+    return null;
+  }
 }
 
 const TenantIdParam = (value: string) => {
@@ -106,6 +137,16 @@ export function tenantRoutes(ctx: AdminContext) {
       async handler(request) {
         const input = request.body;
         TenantId.create(input.id);
+        const missing = ctx.options.tenantFields.filter(
+          (f) => f.required && (input.data?.[f.key] === undefined || input.data[f.key] === ''),
+        );
+        if (missing.length > 0)
+          throw new AdminHttpError(
+            422,
+            'ADMIN_VALIDATION_FAILED',
+            'Invalid request body',
+            missing.map((f) => ({ path: `data.${f.key}`, message: `${f.label} is required` })),
+          );
         if (await t.tenants.find(input.id))
           throw new AdminHttpError(
             409,
@@ -142,9 +183,19 @@ export function tenantRoutes(ctx: AdminContext) {
           t.database.provisioningSteps(tenant.id.value),
         ]);
         const lastRun = steps.at(-1)?.runId;
+        const effectiveTheme = tenant.theme ?? t.theme.defaults;
+        const central = t.centralDomains[0];
+        const previewDomain =
+          (domains.find((d) => d.isPrimary) ?? domains[0])?.domain.value ??
+          (central ? `${tenant.id.value}.${central}` : null);
         return {
           body: {
             tenant: tenantJson(tenant),
+            // El tema que ve el tenant: el suyo o `theme.defaults` de la app (no el del paquete).
+            effectiveTheme: effectiveTheme.toJSON(),
+            defaultTheme: t.theme.defaults.toJSON(),
+            logoUrl: await logoUrlOf(t, tenant, effectiveTheme.logo, previewDomain),
+            previewDomain,
             domains: domains.map((d) => ({
               id: d.id,
               domain: d.domain.value,
@@ -164,26 +215,38 @@ export function tenantRoutes(ctx: AdminContext) {
       path: '/tenants/:id',
       permission: 'tenants:write',
       tag: 'tenants',
-      summary: 'Cambia nombre, plan o datos (los datos se combinan)',
+      summary: 'Cambia nombre, plan o datos (los datos se combinan; removeData borra llaves)',
       body: v.object({
         name: v.optional(v.string()),
         plan: v.optional(v.nullable(v.string())),
         data: v.optional(v.record(v.string(), v.unknown())),
+        /** Llaves de `data` que se borran (JSON no tiene `undefined`). */
+        removeData: v.optional(v.array(v.string())),
       }),
       async handler(request) {
         const before = tenantJson(await t.tenants.findOrFail(TenantIdParam(request.params.id!)));
         const b = request.body;
+        const data =
+          b.data !== undefined || b.removeData?.length
+            ? {
+                ...b.data,
+                ...Object.fromEntries((b.removeData ?? []).map((key) => [key, undefined])),
+              }
+            : undefined;
         const after = tenantJson(
           await t.tenants.update(before.id, {
             ...(b.name !== undefined ? { name: b.name } : {}),
             ...(b.plan !== undefined ? { plan: b.plan } : {}),
-            ...(b.data !== undefined ? { data: b.data } : {}),
+            ...(data !== undefined ? { data } : {}),
           }),
         );
         await ctx.record(request, {
           action: 'tenant.update',
           tenantId: before.id,
-          changes: { before: pick(before, b), after: pick(after, b) },
+          changes: {
+            before: pick(before, { name: b.name, plan: b.plan, ...(data ? { data } : {}) }),
+            after: pick(after, { name: b.name, plan: b.plan, ...(data ? { data } : {}) }),
+          },
         });
         return { body: after };
       },
@@ -344,6 +407,52 @@ export function tenantRoutes(ctx: AdminContext) {
           changes: { before, after: theme.toJSON() },
         });
         return { body: theme.toJSON() };
+      },
+    }),
+    route({
+      method: 'PUT',
+      path: '/tenants/:id/theme/logo',
+      permission: 'tenants:write',
+      tag: 'theme',
+      summary:
+        'Sube el logo (PNG, JPEG, GIF o WebP en el body, sin SVG): se guarda en el almacenamiento del tenant y en theme.logo',
+      upload: {
+        maxBytes: ctx.options.logoMaxBytes,
+        contentTypes: IMAGE_TYPES.map((i) => i.type),
+      },
+      async handler(request) {
+        const tenant = await t.tenants.findOrFail(TenantIdParam(request.params.id!));
+        const bytes = request.body as Buffer | undefined;
+        if (!bytes)
+          throw new AdminHttpError(422, 'ADMIN_EMPTY_UPLOAD', 'Send the image in the request body');
+        // Se confía en el contenido, no en el Content-Type ni en el nombre del archivo.
+        const image = IMAGE_TYPES.find((i) => i.test(bytes));
+        if (!image)
+          throw new AdminHttpError(
+            415,
+            'ADMIN_UNSUPPORTED_IMAGE',
+            'The logo must be a PNG, JPEG, GIF or WebP image',
+          );
+        // Nombre por contenido: cambia con cada logo, así ninguna caché (CDN, navegador) sirve el viejo.
+        const hash = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
+        const path = `${LOGO_PREFIX}${hash}.${image.ext}`;
+        await t.run(tenant, () => t.storage().put(path, bytes, { contentType: image.type }));
+        const before = tenant.theme?.toJSON() ?? null;
+        const theme = await t.theme.update(tenant.id.value, { logo: path });
+        // El logo anterior se borra solo si lo subió el panel (nunca una URL o un archivo de la app).
+        const previous = before?.logo;
+        if (previous && previous !== path && previous.startsWith(LOGO_PREFIX))
+          await t.run(tenant, () => t.storage().delete(previous)).catch(() => undefined);
+        await ctx.record(request, {
+          action: 'theme.logo_upload',
+          tenantId: tenant.id.value,
+          changes: { before, after: theme.toJSON(), size: bytes.length, type: image.type },
+        });
+        const domains = await t.domains.list(tenant.id.value);
+        const domain = (domains.find((d) => d.isPrimary) ?? domains[0])?.domain.value ?? null;
+        return {
+          body: { theme: theme.toJSON(), logoUrl: await logoUrlOf(t, tenant, path, domain) },
+        };
       },
     }),
     route({
@@ -587,8 +696,13 @@ export function tenantRoutes(ctx: AdminContext) {
   ];
 }
 
-function pick(value: Record<string, unknown>, keys: object) {
-  return Object.fromEntries(Object.keys(keys).map((k) => [k, value[k]]));
+/** Los campos de `value` que vienen definidos en `keys`. */
+function pick(value: Record<string, unknown>, keys: Record<string, unknown>) {
+  return Object.fromEntries(
+    Object.keys(keys)
+      .filter((k) => keys[k] !== undefined)
+      .map((k) => [k, value[k]]),
+  );
 }
 
 /** Explorador de datos de solo lectura. Tablas y columnas se validan contra la estructura real. */

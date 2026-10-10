@@ -198,6 +198,63 @@ createTenancy({
 | `keyPrefix`                 | `''`        | Prefijo dentro del bucket: `uploads/bolivar/logo.png`                  |
 | `publicUrl`                 | —           | Base de las URLs públicas. Si falta, `url()` firma                     |
 | `signedUrlExpiresInSeconds` | `3600`      | Vigencia de las URLs firmadas                                          |
+
+### Configurar desde `.env`
+
+`storageFromEnv()` elige el driver y sus opciones con variables de entorno. El mismo código sirve para desarrollo (disco local) y producción (S3, Cloudflare R2, MinIO, Spaces...): solo cambia el `.env`.
+
+```ts
+import { createTenancy } from '@tenancy-node/core';
+import { storageFromEnv } from '@tenancy-node/storage-s3';
+
+createTenancy({ storage: storageFromEnv(), http: { assets: true } });
+```
+
+```bash
+# Desarrollo: disco local (también es lo que pasa si no hay ninguna variable)
+STORAGE_DRIVER=local
+STORAGE_LOCAL_ROOT=./storage
+
+# Cloudflare R2
+STORAGE_DRIVER=r2
+R2_ACCOUNT_ID=0123456789abcdef0123456789abcdef
+S3_BUCKET=mi-app
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+S3_PUBLIC_URL=https://archivos.tuapp.com   # dominio público del bucket; sin esto, URLs firmadas
+
+# AWS S3
+STORAGE_DRIVER=s3
+S3_BUCKET=mi-app
+S3_REGION=sa-east-1
+# sin S3_ACCESS_KEY_ID: el SDK usa AWS_ACCESS_KEY_ID o el rol IAM
+
+# MinIO, SeaweedFS u otro compatible
+STORAGE_DRIVER=s3
+S3_BUCKET=mi-app
+S3_ENDPOINT=http://localhost:9000
+S3_FORCE_PATH_STYLE=true
+S3_ACCESS_KEY_ID=...
+S3_SECRET_ACCESS_KEY=...
+```
+
+| Variable                                   | Por defecto              | Qué hace                                                        |
+| ------------------------------------------ | ------------------------ | --------------------------------------------------------------- |
+| `STORAGE_DRIVER`                           | `local`                  | `local`, `s3` o `r2`                                            |
+| `STORAGE_LOCAL_ROOT`                       | `./storage`              | Carpeta del driver local                                        |
+| `S3_BUCKET`                                | obligatorio con s3 y r2  | Bucket                                                          |
+| `S3_REGION`                                | `us-east-1` (`auto` en r2) | Región                                                        |
+| `S3_ENDPOINT`                              | —                        | Servicio compatible. Con `r2` se arma solo desde `R2_ACCOUNT_ID` |
+| `R2_ACCOUNT_ID`                            | —                        | Id de la cuenta de Cloudflare (32 caracteres)                   |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | —                        | Las dos o ninguna. Sin ellas, la cadena normal del SDK          |
+| `S3_FORCE_PATH_STYLE`                      | —                        | `true` para MinIO y la mayoría de los compatibles               |
+| `S3_PUBLIC_URL`                            | —                        | Base de las URLs públicas (CDN o dominio del bucket)            |
+| `S3_PREFIX`                                | `''`                     | Prefijo de las llaves dentro del bucket                         |
+| `S3_SIGNED_URL_EXPIRES`                    | `3600`                   | Vigencia de las URLs firmadas, en segundos                      |
+
+Si falta una variable obligatoria o un valor no es válido, `storageFromEnv()` lanza `InvalidConfigError` al arrancar, con el nombre de la variable, y no en la primera subida. Recibe un objeto opcional en lugar de `process.env` (útil en tests). `tenancy.health()` verifica el bucket con `HeadBucket`.
+
+Las imágenes y archivos van al driver; en la base solo se guarda su ruta (por ejemplo `theme.logo`). Cambiar de driver no mueve los archivos ya subidos: cópialos al nuevo destino con la misma llave (`<tenant>/<ruta>`), por ejemplo con `rclone`.
 | `client`, `clientConfig`    | —           | Tu `S3Client` (no se cierra al terminar) o su configuración            |
 
 Con `publicUrl`, `url()` arma `publicUrl + llave` sin consultar S3 y sin comprobar que el archivo exista. Sin `publicUrl`, firma un `GetObject`; puedes cambiar la vigencia por llamada:

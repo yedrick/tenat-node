@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, type CSSProperties } from 'react';
-import { del, put } from '../api';
+import { useRef, useState, type CSSProperties } from 'react';
+import { del, put, upload } from '../api';
 import { Button, Card, ErrorBox, Field, Input, Select, useToast } from '../components/ui';
 
 type Theme = Record<string, unknown>;
@@ -25,23 +25,38 @@ export function themeVariables(theme: Theme): CSSProperties {
   return vars as CSSProperties;
 }
 
+/** Formatos que acepta `PUT /tenants/:id/theme/logo` (el servidor revisa el contenido real). */
+const LOGO_TYPES = 'image/png,image/jpeg,image/gif,image/webp';
+
 export function ThemeEditor({
   tenantId,
-  theme,
+  effectiveTheme,
+  defaultTheme,
+  logoUrl,
+  previewDomain,
   canEdit,
 }: {
   tenantId: string;
-  theme: Theme | null;
+  /** Lo que ve el tenant: su tema o `theme.defaults` de la app. */
+  effectiveTheme: Theme;
+  defaultTheme: Theme;
+  logoUrl: string | null;
+  previewDomain: string | null;
   canEdit: boolean;
 }) {
   const client = useQueryClient();
   const toast = useToast();
-  const [draft, setDraft] = useState<Theme>({ primary: '#2563EB', secondary: '#64748B', ...theme });
+  const [draft, setDraft] = useState<Theme>({ ...effectiveTheme });
+  const [logo, setLogo] = useState({ path: effectiveTheme.logo, url: logoUrl });
+  const file = useRef<HTMLInputElement>(null);
   const save = useMutation({
+    // Un campo vaciado se manda como `null` para que se borre (el servidor combina el tema).
     mutationFn: () =>
       put(
         `/tenants/${tenantId}/theme`,
-        Object.fromEntries(Object.entries(draft).filter(([, v]) => v !== '' && v !== undefined)),
+        Object.fromEntries(
+          Object.entries(draft).map(([k, v]) => [k, v === '' || v === undefined ? null : v]),
+        ),
       ),
     onSuccess: () => (
       toast('Tema guardado'),
@@ -52,9 +67,22 @@ export function ThemeEditor({
     mutationFn: () => del(`/tenants/${tenantId}/theme`),
     onSuccess: () => (
       toast('Tema por defecto'),
-      setDraft({ primary: '#2563EB', secondary: '#64748B' }),
+      setDraft({ ...defaultTheme }),
       client.invalidateQueries({ queryKey: ['tenant', tenantId] })
     ),
+  });
+  const uploadLogo = useMutation({
+    mutationFn: (image: File) =>
+      upload<{ theme: Theme; logoUrl: string | null }>(`/tenants/${tenantId}/theme/logo`, image),
+    onSuccess: (result) => {
+      toast('Logo subido');
+      setDraft((d) => ({ ...d, logo: result.theme.logo }));
+      setLogo({ path: result.theme.logo, url: result.logoUrl });
+      void client.invalidateQueries({ queryKey: ['tenant', tenantId] });
+    },
+    onSettled: () => {
+      if (file.current) file.current.value = '';
+    },
   });
   const set = (key: string, value: string) => setDraft((d) => ({ ...d, [key]: value }));
   const vars = themeVariables(draft);
@@ -66,7 +94,7 @@ export function ThemeEditor({
         actions={canEdit && <Button onClick={() => reset.mutate()}>Restablecer</Button>}
       >
         <fieldset disabled={!canEdit} className="space-y-3">
-          <ErrorBox error={save.error} />
+          <ErrorBox error={save.error ?? uploadLogo.error} />
           {COLORS.map(([key, label]) => (
             <Field key={key} label={label}>
               {(id) => (
@@ -120,13 +148,36 @@ export function ThemeEditor({
               />
             )}
           </Field>
-          <Field label="Logo" hint="Ruta en el almacenamiento del tenant o URL https.">
+          <Field
+            label="Logo"
+            hint="Sube una imagen (PNG, JPEG, GIF o WebP) o escribe una ruta del almacenamiento del tenant o una URL https."
+          >
             {(id) => (
-              <Input
-                id={id}
-                value={String(draft.logo ?? '')}
-                onChange={(e) => set('logo', e.target.value)}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id={id}
+                  value={String(draft.logo ?? '')}
+                  onChange={(e) => set('logo', e.target.value)}
+                />
+                <input
+                  ref={file}
+                  type="file"
+                  accept={LOGO_TYPES}
+                  className="hidden"
+                  data-testid="logo-file"
+                  onChange={(e) => {
+                    const image = e.target.files?.[0];
+                    if (image) uploadLogo.mutate(image);
+                  }}
+                />
+                <Button
+                  type="button"
+                  busy={uploadLogo.isPending}
+                  onClick={() => file.current?.click()}
+                >
+                  Subir
+                </Button>
+              </div>
             )}
           </Field>
           {canEdit && (
@@ -150,9 +201,15 @@ export function ThemeEditor({
           }}
           className="space-y-3 border border-line p-4"
         >
-          <p className="text-lg font-semibold" style={{ color: 'var(--color-primary)' }}>
-            {tenantId}.tuapp.com
-          </p>
+          <div className="flex items-center gap-2">
+            {/* La URL solo se conoce para el logo guardado; uno escrito a mano se ve al guardar. */}
+            {logo.url && draft.logo === logo.path && (
+              <img src={logo.url} alt="Logo" className="h-8 w-auto" data-testid="preview-logo" />
+            )}
+            <p className="text-lg font-semibold" style={{ color: 'var(--color-primary)' }}>
+              {previewDomain ?? tenantId}
+            </p>
+          </div>
           <p className="text-sm">Así se ve la tienda de este tenant con su tema.</p>
           <div className="flex gap-2">
             <button

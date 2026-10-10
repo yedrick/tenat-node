@@ -10,7 +10,13 @@ import {
   type S3ClientConfig,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import type { PutOptions, StorageDriver, StoredFile } from '@tenancy-node/core';
+import {
+  InvalidConfigError,
+  LocalStorage,
+  type PutOptions,
+  type StorageDriver,
+  type StoredFile,
+} from '@tenancy-node/core';
 
 export interface S3StorageOptions {
   bucket: string;
@@ -169,4 +175,89 @@ export class S3Storage implements StorageDriver {
 /** `storage: s3({ bucket: 'mi-app' })` */
 export function s3(options: S3StorageOptions): S3Storage {
   return new S3Storage(options);
+}
+
+/** Variables de entorno que lee `storageFromEnv`. */
+export type StorageEnv = Record<string, string | undefined>;
+
+const TRUE = /^(1|true|yes|on)$/i;
+const FALSE = /^(0|false|no|off)$/i;
+
+/**
+ * Elige y configura el almacenamiento con variables de entorno, para cambiar de disco local a
+ * S3, Cloudflare R2, MinIO, Spaces... sin tocar el código:
+ *
+ * ```ts
+ * createTenancy({ storage: storageFromEnv() });
+ * ```
+ *
+ * | Variable                                   | Uso                                                       |
+ * | ------------------------------------------ | --------------------------------------------------------- |
+ * | `STORAGE_DRIVER`                           | `local` (por defecto), `s3` o `r2`                        |
+ * | `STORAGE_LOCAL_ROOT`                       | Carpeta del driver local. Por defecto `./storage`         |
+ * | `S3_BUCKET`                                | Bucket (obligatorio con `s3` y `r2`)                      |
+ * | `S3_REGION`                                | Región. Por defecto `us-east-1` (`auto` con `r2`)         |
+ * | `S3_ENDPOINT`                              | Servicio compatible (MinIO, Spaces...). Con `r2`, opcional |
+ * | `R2_ACCOUNT_ID`                            | Con `r2`: arma `https://<id>.r2.cloudflarestorage.com`    |
+ * | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Credenciales (si faltan, las de AWS del entorno)          |
+ * | `S3_FORCE_PATH_STYLE`                      | `true` para MinIO y la mayoría de los compatibles         |
+ * | `S3_PUBLIC_URL`                            | URL pública (CDN o dominio del bucket); sin ella, URLs firmadas |
+ * | `S3_PREFIX`                                | Prefijo de las llaves dentro del bucket                   |
+ * | `S3_SIGNED_URL_EXPIRES`                    | Vigencia de las URLs firmadas, en segundos                |
+ *
+ * Lanza `InvalidConfigError` si falta algo o un valor no es válido, al arrancar y no en la
+ * primera subida.
+ */
+export function storageFromEnv(env: StorageEnv = process.env): StorageDriver {
+  const value = (name: string) => {
+    const v = env[name]?.trim();
+    return v ? v : undefined;
+  };
+  const driver = (value('STORAGE_DRIVER') ?? 'local').toLowerCase();
+  if (driver === 'local') {
+    const root = value('STORAGE_LOCAL_ROOT');
+    return new LocalStorage(root ? { root } : {});
+  }
+  if (driver !== 's3' && driver !== 'r2')
+    throw new InvalidConfigError(`STORAGE_DRIVER must be local, s3 or r2 (got "${driver}")`);
+
+  const bucket = value('S3_BUCKET');
+  if (!bucket) throw new InvalidConfigError(`STORAGE_DRIVER=${driver} needs S3_BUCKET`);
+
+  let endpoint = value('S3_ENDPOINT');
+  if (driver === 'r2' && !endpoint) {
+    const account = value('R2_ACCOUNT_ID');
+    if (!account)
+      throw new InvalidConfigError('STORAGE_DRIVER=r2 needs R2_ACCOUNT_ID or S3_ENDPOINT');
+    if (!/^[a-f0-9]{32}$/i.test(account))
+      throw new InvalidConfigError('R2_ACCOUNT_ID must be the 32-character Cloudflare account id');
+    endpoint = `https://${account}.r2.cloudflarestorage.com`;
+  }
+  if (endpoint && !/^https?:\/\//i.test(endpoint))
+    throw new InvalidConfigError('S3_ENDPOINT must start with http:// or https://');
+
+  const accessKeyId = value('S3_ACCESS_KEY_ID');
+  const secretAccessKey = value('S3_SECRET_ACCESS_KEY');
+  if (Boolean(accessKeyId) !== Boolean(secretAccessKey))
+    throw new InvalidConfigError('Set both S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY, or neither');
+
+  const pathStyle = value('S3_FORCE_PATH_STYLE');
+  if (pathStyle && !TRUE.test(pathStyle) && !FALSE.test(pathStyle))
+    throw new InvalidConfigError('S3_FORCE_PATH_STYLE must be true or false');
+
+  const expires = value('S3_SIGNED_URL_EXPIRES');
+  const expiresIn = expires === undefined ? undefined : Number(expires);
+  if (expiresIn !== undefined && !(Number.isInteger(expiresIn) && expiresIn > 0))
+    throw new InvalidConfigError('S3_SIGNED_URL_EXPIRES must be a positive number of seconds');
+
+  return new S3Storage({
+    bucket,
+    region: value('S3_REGION') ?? (driver === 'r2' ? 'auto' : undefined),
+    endpoint,
+    ...(accessKeyId && secretAccessKey ? { credentials: { accessKeyId, secretAccessKey } } : {}),
+    ...(pathStyle ? { forcePathStyle: TRUE.test(pathStyle) } : {}),
+    keyPrefix: value('S3_PREFIX'),
+    publicUrl: value('S3_PUBLIC_URL'),
+    ...(expiresIn ? { signedUrlExpiresInSeconds: expiresIn } : {}),
+  });
 }

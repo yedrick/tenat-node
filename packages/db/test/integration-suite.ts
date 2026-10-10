@@ -28,7 +28,8 @@ import {
   MemoryLogger,
   tenantRepositoryContract,
 } from '@tenancy-node/testing';
-import type { Migration } from 'kysely';
+import { sql, type Migration } from 'kysely';
+import { parseConnectionUrl } from '../src/connection.js';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 export interface IntegrationTarget {
@@ -38,6 +39,11 @@ export interface IntegrationTarget {
   isolation?: 'database' | 'schema';
   /** Lo que el motor no tiene se saltea (SQLite: sin usuarios por tenant ni information_schema). */
   capabilities?: { perTenantCredentials?: boolean; schemaGeneration?: boolean };
+  /**
+   * `SELECT 1` directo con el driver nativo (sin Kysely), como hace una app con `tenancy.pool()`.
+   * Sirve para probar que `destroy()` cierra el pool nativo aunque Kysely nunca lo haya usado.
+   */
+  nativeQuery?: (native: unknown) => Promise<unknown>;
   /** Levanta el motor y devuelve la URL de un usuario con permiso de CREATE DATABASE. */
   start(): Promise<{ url: string; stop(): Promise<void> }>;
 }
@@ -169,6 +175,25 @@ export function databaseIntegrationSuite(target: IntegrationTarget): void {
           );
         }
         return new KyselyDomainRepository(central);
+      });
+
+      it.skipIf(!target.nativeQuery)('closes the native pool even when Kysely never used it', async () => {
+        const driver = target.driver();
+        const connection = parseConnectionUrl(url, driver.defaultPort);
+        const query = target.nativeQuery!;
+
+        const nativeOnly = driver.connect(connection, { max: 2 });
+        await query(nativeOnly.native);
+        await nativeOnly.destroy();
+        await nativeOnly.destroy(); // dos veces no falla
+        await expect(query(nativeOnly.native)).rejects.toThrow();
+
+        // Con Kysely ya inicializado no se cierra dos veces el mismo pool.
+        const both = driver.connect(connection, { max: 2 });
+        await sql`SELECT 1`.execute(both.db);
+        await query(both.native);
+        await both.destroy();
+        await expect(query(both.native)).rejects.toThrow();
       });
 
       it('installs every central table, idempotently', async () => {

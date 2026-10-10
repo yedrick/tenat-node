@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, type ReactNode } from 'react';
 import { ApiError, get, onUnauthorized, post, setCsrfToken } from './api';
+import type { AdminConfig } from './types';
 
 export interface AdminUser {
   id: number;
@@ -17,6 +18,8 @@ interface Session {
   user: AdminUser;
   permissions: string[];
   csrfToken: string | null;
+  /** Falta en servidores anteriores a `tenantFields`. */
+  config?: AdminConfig;
 }
 
 interface AuthState {

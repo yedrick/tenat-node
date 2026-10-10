@@ -52,7 +52,13 @@ export function postgres(options: PostgresDriverOptions = {}): DatabaseDriver {
       const db = new Kysely<AnyDB>({
         dialect: new PostgresDialect({ pool: native, ...(pool.schema ? { onReserveConnection: searchPath(pool.schema) } : {}) }),
       });
-      return { db, native, destroy: () => db.destroy() };
+      let destroying: Promise<void> | undefined;
+      const destroy = async () => {
+        // Kysely solo cierra el pool si alguna vez lo usó (ver db-mysql). `end()` dos veces lanza.
+        await db.destroy();
+        if (!native.ended) await native.end();
+      };
+      return { db, native, destroy: () => (destroying ??= destroy()) };
     },
 
     scope(base, schema) {

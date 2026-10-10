@@ -1,10 +1,12 @@
 import { MySqlContainer } from '@testcontainers/mysql';
 import { mysql } from '@tenancy-node/db-mysql';
 import { databaseIntegrationSuite } from '../../db/test/integration-suite.js';
+import type { Pool } from 'mysql2';
 
 databaseIntegrationSuite({
   name: 'MySQL 8',
   driver: () => mysql(),
+  nativeQuery: (pool) => (pool as Pool).promise().query('SELECT 1'),
   async start() {
     const container = await new MySqlContainer('mysql:8.0')
       .withRootPassword('secret')

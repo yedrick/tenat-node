@@ -1,7 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { followProgress, post, type ProgressEvent } from '../api';
+import { useAuth } from '../auth';
+import { DataEditor, dataFromRows, type DataRow } from '../components/DataEditor';
 import { Badge, Button, ErrorBox, Field, Input, Modal } from '../components/ui';
+import type { TenantField } from '../types';
 import { navigate } from '../router';
 
 interface StepState {
@@ -20,9 +23,19 @@ const STEP_LABELS: Record<string, string> = {
   cleanup: 'Limpieza',
 };
 
+/** Valor de un campo declarado, con el tipo que espera la app. */
+function fieldValue(field: TenantField, raw: string): unknown {
+  return field.type === 'number' ? Number(raw) : raw.trim();
+}
+
 export function NewTenant({ open, onClose }: { open: boolean; onClose: () => void }) {
   const client = useQueryClient();
+  const { session } = useAuth();
+  const fields = session?.config?.tenantFields ?? [];
+  const central = session?.config?.centralDomains[0] ?? 'tuapp.com';
   const [form, setForm] = useState({ id: '', name: '', domain: '', plan: '' });
+  const [declared, setDeclared] = useState<Record<string, string>>({});
+  const [extra, setExtra] = useState<DataRow[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [creatingId, setCreatingId] = useState<string | null>(null);
@@ -34,6 +47,8 @@ export function NewTenant({ open, onClose }: { open: boolean; onClose: () => voi
   const reset = () => {
     stop.current?.();
     setForm({ id: '', name: '', domain: '', plan: '' });
+    setDeclared({});
+    setExtra([]);
     setCreatingId(null);
     setSteps([]);
     setFinal(null);
@@ -45,8 +60,15 @@ export function NewTenant({ open, onClose }: { open: boolean; onClose: () => voi
     setBusy(true);
     setError(null);
     try {
+      // Primero los datos libres; los campos declarados por la app tienen prioridad.
+      const data = dataFromRows(extra);
+      for (const field of fields) {
+        const raw = declared[field.key] ?? '';
+        if (raw.trim() !== '') data[field.key] = fieldValue(field, raw);
+      }
       await post('/tenants', {
         id: form.id.trim(),
+        ...(Object.keys(data).length > 0 ? { data } : {}),
         ...(form.name ? { name: form.name } : {}),
         ...(form.domain
           ? {
@@ -130,7 +152,7 @@ export function NewTenant({ open, onClose }: { open: boolean; onClose: () => voi
               <Input
                 id={id}
                 value={form.domain}
-                placeholder="bolivar.tuapp.com"
+                placeholder={`bolivar.${central}`}
                 onChange={(e) => setForm({ ...form, domain: e.target.value })}
               />
             )}
@@ -144,6 +166,27 @@ export function NewTenant({ open, onClose }: { open: boolean; onClose: () => voi
               />
             )}
           </Field>
+          {fields.map((field) => (
+            <Field key={field.key} label={field.label} hint={field.hint}>
+              {(id) => (
+                <Input
+                  id={id}
+                  type={field.type ?? 'text'}
+                  required={field.required}
+                  placeholder={field.placeholder}
+                  value={declared[field.key] ?? ''}
+                  onChange={(e) => setDeclared({ ...declared, [field.key]: e.target.value })}
+                />
+              )}
+            </Field>
+          ))}
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Datos adicionales</legend>
+            <p className="text-xs text-muted">
+              Se guardan en <code>tenant.data</code> y los recibe el seed.
+            </p>
+            <DataEditor rows={extra} onChange={setExtra} />
+          </fieldset>
           <div className="flex justify-end gap-2">
             <Button type="button" onClick={close}>
               Cancelar

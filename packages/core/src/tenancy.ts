@@ -136,7 +136,11 @@ export interface CurrentTheme {
 export interface ThemeApi {
   /** Tema del tenant actual (o el tema por defecto en el contexto central). */
   (): CurrentTheme;
-  /** Cambia parte del tema de un tenant. */
+  /**
+   * Cambia parte del tema de un tenant y devuelve el tema nuevo. Si es el tenant del contexto
+   * actual, `tenancy.theme()` ya lo ve en el resto de la petición; `tenancy.current().theme`
+   * sigue siendo el que se cargó al empezar (usa el `Theme` que devuelve `update`).
+   */
   update(tenant: TenantRef, patch: ThemePatch): Promise<Theme>;
   /** Vuelve al tema por defecto. */
   reset(tenant: TenantRef): Promise<Theme>;
@@ -282,6 +286,8 @@ export class Tenancy {
   private readonly logger: Logger;
   private readonly cacheStore: CacheStore;
   private readonly storageDriver: StorageDriver;
+  /** Versiones de los temas cambiados dentro de un contexto (llave del renderer). */
+  private themeVersion = 0;
   private readonly queueDriver: QueueDriver;
   private readonly jobHandlers = new Map<string, { handler: JobHandler; defaults: JobOptions }>();
   private readonly workers: QueueWorker[] = [];
@@ -480,9 +486,18 @@ export class Tenancy {
     };
 
     this.theme = Object.assign(() => this.currentTheme(), {
-      update: (ref: TenantRef, patch: ThemePatch) =>
-        write('theme.update', ref, () => updateTheme.execute(ref, patch)),
-      reset: (ref: TenantRef) => write('theme.reset', ref, () => updateTheme.execute(ref, null)),
+      update: async (ref: TenantRef, patch: ThemePatch) =>
+        this.rememberTheme(
+          ref,
+          await write('theme.update', ref, () => updateTheme.execute(ref, patch)),
+          false,
+        ),
+      reset: async (ref: TenantRef) =>
+        this.rememberTheme(
+          ref,
+          await write('theme.reset', ref, () => updateTheme.execute(ref, null)),
+          true,
+        ),
       defaults: this.defaultTheme,
     });
 
@@ -1041,10 +1056,32 @@ export class Tenancy {
     return merged;
   }
 
+  /**
+   * El tenant del contexto es el que se cargó al empezar la petición: si se cambia su tema dentro
+   * de ella, `tenancy.theme()` debe ver el nuevo y no el de esa instancia.
+   */
+  private rememberTheme(ref: TenantRef, theme: Theme, reset: boolean): Theme {
+    const frame = this.context.frame();
+    if (frame?.tenant && frame.tenant.id.value === refId(ref)) {
+      frame.resources.set(THEME_OVERRIDE, {
+        theme: reset ? this.defaultTheme : theme,
+        version: ++this.themeVersion,
+      });
+    }
+    return theme;
+  }
+
   private currentTheme(): CurrentTheme {
     const tenant = this.current();
-    const theme = tenant?.theme ?? this.defaultTheme;
-    const key = tenant ? `${tenant.id.value}:${tenant.updatedAt.getTime()}` : '\0default';
+    const override = this.context.frame()?.resources.get(THEME_OVERRIDE) as
+      | { theme: Theme; version: number }
+      | undefined;
+    const theme = override?.theme ?? tenant?.theme ?? this.defaultTheme;
+    const key = override
+      ? `${tenant!.id.value}:override:${override.version}`
+      : tenant
+        ? `${tenant.id.value}:${tenant.updatedAt.getTime()}`
+        : '\0default';
     const rendered = () => this.renderer.render(key, theme);
     return {
       theme,
@@ -1064,6 +1101,9 @@ export class Tenancy {
     }
   }
 }
+
+/** Recurso del frame con el tema cambiado dentro del contexto (ver `rememberTheme`). */
+const THEME_OVERRIDE = '\0theme';
 
 /** Composition root: crea el facade `tenancy` con los adaptadores y plugins de la configuración. */
 export function createTenancy<const P extends readonly TenancyPlugin[] = []>(

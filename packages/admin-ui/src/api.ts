@@ -26,15 +26,31 @@ export function onUnauthorized(listener: () => void): () => void {
 }
 
 export async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+  return send<T>(
+    method,
+    path,
+    body === undefined ? undefined : { type: 'application/json', data: JSON.stringify(body) },
+  );
+}
+
+/** Sube un archivo como body binario (`PUT /tenants/:id/theme/logo`). */
+export const upload = <T>(path: string, file: Blob) =>
+  send<T>('PUT', path, { type: file.type || 'application/octet-stream', data: file });
+
+async function send<T>(
+  method: string,
+  path: string,
+  body?: { type: string; data: BodyInit },
+): Promise<T> {
   const headers: Record<string, string> = { accept: 'application/json' };
-  if (body !== undefined) headers['content-type'] = 'application/json';
+  if (body !== undefined) headers['content-type'] = body.type;
   // Toda petición que cambia algo lleva el token CSRF de la sesión.
   if (method !== 'GET' && csrfToken) headers['x-csrf-token'] = csrfToken;
   const response = await fetch(BASE + path, {
     method,
     headers,
     credentials: 'same-origin',
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    ...(body !== undefined ? { body: body.data } : {}),
   });
   if (response.status === 204) return undefined as T;
   const data = (await response.json().catch(() => undefined)) as

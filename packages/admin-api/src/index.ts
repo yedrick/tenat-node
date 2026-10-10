@@ -1,5 +1,5 @@
 export { createAdminApi, serveAdmin, type AdminApi, type ServeAdminOptions } from './admin.js';
-export type { AdminOptions, AdminContext, AdminTenancy } from './context.js';
+export type { AdminOptions, AdminContext, AdminTenancy, TenantField } from './context.js';
 export {
   consumeImpersonationToken,
   InvalidImpersonationTokenError,

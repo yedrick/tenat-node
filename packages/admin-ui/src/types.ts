@@ -44,6 +44,12 @@ export interface TrackedError {
 
 export interface TenantDetail {
   tenant: Tenant;
+  /** El tema que ve el tenant: el suyo o el `theme.defaults` de la app. */
+  effectiveTheme: Record<string, unknown>;
+  defaultTheme: Record<string, unknown>;
+  logoUrl: string | null;
+  /** Dominio principal del tenant (o `<id>.<dominio central>`) para la vista previa. */
+  previewDomain: string | null;
   domains: { id: number; domain: string; isPrimary: boolean; verifiedAt: string | null }[];
   provisioning: ProvisioningStep[];
   errors: TrackedError[];
@@ -86,4 +92,19 @@ export interface AuditEntry {
   changes: unknown;
   ip: string | null;
   createdAt: string;
+}
+
+/** Campo de `tenant.data` declarado por la app (`createAdminApi({ tenantFields })`). */
+export interface TenantField {
+  key: string;
+  label: string;
+  type?: 'text' | 'email' | 'tel' | 'url' | 'number';
+  required?: boolean;
+  hint?: string;
+  placeholder?: string;
+}
+
+export interface AdminConfig {
+  centralDomains: string[];
+  tenantFields: TenantField[];
 }

@@ -94,6 +94,7 @@ tenancy.events.on('theme.updated', (event) => {
 ```
 
 - `update` y `reset` devuelven el `Theme` resultante.
+- Dentro de una petición del mismo tenant, `tenancy.theme()` ya ve el tema nuevo después de `update` o `reset`. `tenancy.current().theme` no: es la instancia de `Tenant` que se cargó al empezar la petición. Usa el `Theme` que devuelve `update`.
 - `primary` y `secondary` no aceptan `null`: siempre hay un valor.
 - `custom` se reemplaza entero, no se mezcla variable por variable.
 - Si el resultado es igual al tema actual, no se guarda nada ni se publica `theme.updated`.

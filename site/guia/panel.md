@@ -147,6 +147,10 @@ const admin = createAdminApi(tenancy, {
   publicDocs: false, // /openapi.json solo con sesión
   impersonationTtlSeconds: 60,
   impersonationUrl: ({ domain, token }) => `https://${domain}/entrar-como?token=${token}`,
+  trustProxy: 1, // detrás de nginx: la IP real sale de X-Forwarded-For
+  tenantFields: [
+    { key: 'adminEmail', label: 'Email del administrador', type: 'email', required: true },
+  ],
 });
 ```
 
@@ -163,11 +167,38 @@ const admin = createAdminApi(tenancy, {
 | `impersonationUrl`        | `https://<dominio principal>/tenancy/impersonate?token=` | URL que abre la sesión en la app del tenant                 |
 | `maskedColumns`           | `/(password\|secret\|token\|hash\|salt\|api_?key\|otp\|2fa)/i` | Columnas que el explorador oculta                   |
 | `bodyLimitBytes`          | 1 MiB                                                  | Tamaño máximo del body (413 si se pasa)                     |
+| `logoMaxBytes`            | 2 MiB                                                  | Tamaño máximo del logo que se sube desde el editor de tema  |
+| `trustProxy`              | `false`                                                | IP del cliente desde `X-Forwarded-For` (ver [Detrás de un proxy](#detras-de-un-proxy)) |
+| `clientIp`                | —                                                      | `(req) => ip` propia; tiene prioridad sobre `trustProxy`    |
+| `tenantFields`            | `[]`                                                   | Campos de `tenant.data` que pide "Nuevo tenant" (ver [Datos del tenant](#datos-del-tenant)) |
 | `publicDocs`              | `true`                                                 | `/openapi.json` sin autenticación                           |
 | `issuer`                  | `tenancy-node`                                         | Nombre que muestra la app de autenticación (2FA)            |
 | `ui`                      | apagado                                                | `true` sirve `@tenancy-node/admin-ui`; o la ruta de una UI compilada |
 
 `serveAdmin` acepta además `port` y `host`.
+
+### Detrás de un proxy
+
+Detrás de nginx o un balanceador, todas las peticiones llegan desde la IP del proxy. Sin `trustProxy`, 5 logins fallidos de **cualquier persona** bloquean el login para **todos** durante 15 minutos, y la auditoría guarda la IP del proxy en todas las filas.
+
+```ts
+createAdminApi(tenancy, { sessionSecret, trustProxy: 1 }); // un proxy (nginx) delante
+```
+
+- Un número `n` confía en los últimos `n` saltos de `X-Forwarded-For`, contando desde el socket (como `trust proxy` de Express). Una IP falsa que agregue el cliente al principio del encabezado se ignora.
+- `true` toma la primera IP del encabezado: úsalo solo si el proxy **reemplaza** `X-Forwarded-For` (`proxy_set_header X-Forwarded-For $remote_addr;`).
+- Actívalo solo si el panel no se puede alcanzar sin pasar por el proxy: si no, cualquiera escribe el encabezado.
+- Con Express puedes pasar su cálculo: `clientIp: (req) => (req as express.Request).ip`.
+
+En nginx:
+
+```nginx
+location /admin/ {
+  proxy_pass http://127.0.0.1:3000;
+  proxy_set_header Host $host;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
 
 ## Autenticación
 
@@ -177,7 +208,7 @@ const admin = createAdminApi(tenancy, {
   - `mode: 'cookie'` (por defecto, para el navegador): cookie `HttpOnly; SameSite=Strict; Secure`. La respuesta trae `csrfToken`.
   - `mode: 'token'` (para automatizar): la respuesta trae `token` y lo mandas como `Authorization: Bearer <token>`.
 - **CSRF**: con cookie, toda petición que no sea `GET` debe traer `X-CSRF-Token` (HMAC de la sesión con `sessionSecret`). Si falta: 403 `ADMIN_CSRF`. Con Bearer no hace falta.
-- **Límite de intentos**: 5 fallos cada 15 min por IP y por email. Después, 429 `ADMIN_TOO_MANY_ATTEMPTS` con `Retry-After`. El contador vive en memoria del proceso: con varias réplicas del panel, cada una cuenta los suyos.
+- **Límite de intentos**: 5 fallos cada 15 min por IP y por email. Después, 429 `ADMIN_TOO_MANY_ATTEMPTS` con `Retry-After`. El contador vive en memoria del proceso: con varias réplicas del panel, cada una cuenta los suyos. Detrás de un proxy, configura `trustProxy` ([Detrás de un proxy](#detras-de-un-proxy)).
 - **2FA TOTP** (RFC 6238, 6 dígitos, 30 s, acepta un paso de desfase). Se activa en dos pasos: `POST /auth/2fa/setup` devuelve el secreto y la URL `otpauth://`; `POST /auth/2fa/enable` lo confirma con un código. Con 2FA, el login sin `code` responde 401 `ADMIN_2FA_REQUIRED`. Requiere `encryptionKey`: sin ella los dos pasos responden 501 `TENANCY_ENCRYPTION_KEY_MISSING`.
 - Cambiar la contraseña cierra las demás sesiones. Cambiar el rol o desactivar a un usuario cierra todas las suyas.
 
@@ -220,7 +251,7 @@ La lista completa, con cuerpos y parámetros, está en el documento OpenAPI 3.1 
 | Área          | Rutas principales                                                                                                                        |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
 | `auth`        | `/auth/login`, `/auth/logout`, `/auth/me`, `/auth/password`, `/auth/2fa/setup`, `/auth/2fa/enable`, `/auth/2fa/disable`                    |
-| `tenants`     | `GET/POST /tenants`, `GET/PATCH/DELETE /tenants/:id`, `/tenants/:id/suspend`, `/activate`, `/maintenance`, `/retry`, `/progress`, `/theme`, `/cache/flush` |
+| `tenants`     | `GET/POST /tenants`, `GET/PATCH/DELETE /tenants/:id`, `/tenants/:id/suspend`, `/activate`, `/maintenance`, `/retry`, `/progress`, `/theme`, `/theme/logo`, `/cache/flush` |
 | dominios      | `GET/POST /tenants/:id/domains`, `DELETE /domains/:domain`, `POST /domains/:domain/primary`                                                |
 | `database`    | `GET /tenants/:id/migrations`, `POST /tenants/:id/migrate`, `POST /tenants/:id/seed`, `POST /migrate` (todos, con concurrencia)             |
 | `data`        | `GET /tenants/:id/tables`, `GET /tenants/:id/tables/:table`                                                                               |
@@ -243,6 +274,45 @@ Borrar un tenant exige confirmar el id en el body: `DELETE /tenants/bolivar` con
 | `done`   | `{ status }` al llegar a `active` o `failed`; luego se cierra |
 
 El servidor lee los pasos de `tenancy_provisioning_steps` en la base, no de la memoria: funciona aunque el tenant se esté creando en otro proceso. Consulta cada 250 ms, manda un keep-alive cada 15 s y corta a los 10 minutos.
+
+### Datos del tenant
+
+`POST /tenants` y `PATCH /tenants/:id` aceptan `data` (lo recibe el `seed` en `tenant.data`). `PATCH` combina las llaves; para borrar una, `{ "removeData": ["llave"] }`.
+
+Con `tenantFields`, el formulario "Nuevo tenant" pide esos campos (por ejemplo, el email del administrador inicial que el `seed` va a crear) y el servidor rechaza la creación si falta uno `required` (422, `details: [{ path: 'data.adminEmail', ... }]`). Además, el formulario y la pestaña Resumen del detalle permiten cargar y editar datos libres (llave → valor).
+
+```ts
+createAdminApi(tenancy, {
+  sessionSecret,
+  tenantFields: [
+    { key: 'adminEmail', label: 'Email del administrador', type: 'email', required: true },
+    { key: 'telefono', label: 'Teléfono', type: 'tel', hint: 'Se muestra en la página pública' },
+  ],
+});
+
+// En el seed:
+seed: async (db, tenant) => {
+  await crearAdministrador(db, String(tenant.data.adminEmail));
+},
+```
+
+### Tema y logo
+
+`GET /tenants/:id` trae, además del tenant, `effectiveTheme` (su tema o, si no tiene, el `theme.defaults` de tu app), `defaultTheme`, `logoUrl` y `previewDomain` (su dominio principal, o `<id>.<primer dominio central>`). El editor parte de `effectiveTheme`: guardar sin tocar un color no lo cambia por otro.
+
+`PUT /tenants/:id/theme/logo` sube el logo con la imagen como body (`Content-Type: image/png`, hasta `logoMaxBytes`):
+
+- Solo PNG, JPEG, GIF o WebP, reconocidos por su **contenido** (no por el `Content-Type` ni el nombre). SVG no: puede llevar scripts. Otro formato responde 415 `ADMIN_UNSUPPORTED_IMAGE`.
+- Se guarda en el almacenamiento del tenant (`tenancy.storage()`: disco local, S3 o compatible, según `storage` en `createTenancy`) como `theme/logo-<hash>.<ext>`, y esa ruta queda en `theme.logo` en la base central. El nombre cambia con cada logo, así ninguna caché sirve el anterior.
+- El logo anterior se borra si también lo había subido el panel.
+- Queda en la auditoría como `theme.logo_upload`.
+
+```bash
+curl -X PUT https://tuapp.com/admin/api/tenants/bolivar/theme/logo \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: image/png' --data-binary @logo.png
+```
+
+Con Express, monta el panel **antes** de `express.json()`/`express.raw()`: si otro parser ya leyó el body, la subida responde 415 `ADMIN_BODY_ALREADY_PARSED` (salvo que sea un `Buffer` de `express.raw()`).
 
 ### Explorador de datos
 

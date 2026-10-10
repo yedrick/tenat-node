@@ -51,6 +51,8 @@ export interface RouteDefinition<TBody = unknown> {
   query?: Record<string, string>;
   /** La ruta escribe ella misma la respuesta (SSE). */
   streaming?: boolean;
+  /** Cuerpo binario (subida de archivos): `body` es un `Buffer`, sin validar ni parsear. */
+  upload?: { maxBytes: number; contentTypes: readonly string[] };
   handler(request: AdminRequest & { body: TBody }): Promise<JsonResponse | void>;
 }
 
@@ -89,13 +91,31 @@ export function match(routes: readonly CompiledRoute[], method: string, path: st
   return { route: undefined, params: {}, pathMatched };
 }
 
-/** Lee el cuerpo JSON con un límite de tamaño. */
-export function readJson(req: IncomingMessage, limitBytes: number): Promise<unknown> {
-  // Un body parser anterior (`express.json()`, `express.text()`...) ya leyó el stream: esperar
-  // 'end' colgaría la petición para siempre. Se usa lo que ese parser dejó en `req.body`.
-  if (req.readableEnded) return new Promise((resolve) => resolve(parsedBody(req)));
+/**
+ * IP del cliente. Sin `trustProxy` es la del socket. Con `true`, la primera de `X-Forwarded-For`;
+ * con un número `n`, la que agregó el proxy `n` contando desde el socket (como Express).
+ */
+export function clientIpOf(
+  req: IncomingMessage,
+  trustProxy: boolean | number = false,
+): string | null {
+  const socket = req.socket.remoteAddress ?? null;
+  if (trustProxy === false || trustProxy === 0) return socket;
+  const header = req.headers['x-forwarded-for'];
+  const forwarded = (Array.isArray(header) ? header.join(',') : (header ?? ''))
+    .split(',')
+    .map((ip) => ip.trim())
+    .filter(Boolean);
+  if (forwarded.length === 0) return socket;
+  if (trustProxy === true) return forwarded[0]!;
+  // [cliente, proxy1, ..., socket]: se saltan los `n` proxies de confianza desde la derecha.
+  const chain = socket ? [...forwarded, socket] : forwarded;
+  return chain[Math.max(0, chain.length - 1 - trustProxy)] ?? socket;
+}
+
+/** Lee el cuerpo completo con un límite de tamaño (`undefined` si viene vacío). */
+function readBytes(req: IncomingMessage, limitBytes: number): Promise<Buffer | undefined> {
   return new Promise((resolve, reject) => {
-    const type = req.headers['content-type'] ?? '';
     let size = 0;
     let tooLarge = false;
     const chunks: Buffer[] = [];
@@ -119,24 +139,57 @@ export function readJson(req: IncomingMessage, limitBytes: number): Promise<unkn
     });
     req.on('end', () => {
       if (tooLarge) return;
-      if (chunks.length === 0) return resolve(undefined);
-      if (!type.includes('application/json')) {
-        return reject(
-          new AdminHttpError(
-            415,
-            'ADMIN_UNSUPPORTED_MEDIA_TYPE',
-            'Use Content-Type: application/json',
-          ),
-        );
-      }
-      try {
-        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-      } catch {
-        reject(new AdminHttpError(400, 'ADMIN_INVALID_JSON', 'The body is not valid JSON'));
-      }
+      resolve(chunks.length === 0 ? undefined : Buffer.concat(chunks));
     });
     req.on('error', reject);
   });
+}
+
+/** Lee el cuerpo JSON con un límite de tamaño. */
+export async function readJson(req: IncomingMessage, limitBytes: number): Promise<unknown> {
+  // Un body parser anterior (`express.json()`, `express.text()`...) ya leyó el stream: esperar
+  // 'end' colgaría la petición para siempre. Se usa lo que ese parser dejó en `req.body`.
+  if (req.readableEnded) return parsedBody(req);
+  const body = await readBytes(req, limitBytes);
+  if (body === undefined) return undefined;
+  if (!(req.headers['content-type'] ?? '').includes('application/json')) {
+    throw new AdminHttpError(
+      415,
+      'ADMIN_UNSUPPORTED_MEDIA_TYPE',
+      'Use Content-Type: application/json',
+    );
+  }
+  try {
+    return JSON.parse(body.toString('utf8'));
+  } catch {
+    throw new AdminHttpError(400, 'ADMIN_INVALID_JSON', 'The body is not valid JSON');
+  }
+}
+
+/** Lee el cuerpo binario (subida de archivos) con un límite de tamaño. */
+export async function readRaw(
+  req: IncomingMessage,
+  limitBytes: number,
+): Promise<Buffer | undefined> {
+  if (req.readableEnded) {
+    // Solo sirve lo que dejó `express.raw()`; otro parser ya convirtió (o descartó) los bytes.
+    const body = (req as IncomingMessage & { body?: unknown }).body;
+    if (Buffer.isBuffer(body)) {
+      if (body.length > limitBytes)
+        throw new AdminHttpError(
+          413,
+          'ADMIN_PAYLOAD_TOO_LARGE',
+          `Body larger than ${limitBytes} bytes`,
+        );
+      return body.length === 0 ? undefined : body;
+    }
+    throw new AdminHttpError(
+      415,
+      'ADMIN_BODY_ALREADY_PARSED',
+      'Another body parser consumed this upload: mount the admin panel before it',
+    );
+  }
+  return readBytes(req, limitBytes);
 }
 
 function parsedBody(req: IncomingMessage): unknown {

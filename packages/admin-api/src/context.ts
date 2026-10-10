@@ -1,3 +1,4 @@
+import type { IncomingMessage } from 'node:http';
 import type { Tenancy } from '@tenancy-node/core';
 import type { CentralAccess, DatabaseExtension } from '@tenancy-node/db';
 import type { OutboxApi } from '@tenancy-node/outbox';
@@ -10,6 +11,18 @@ import type { AdminRequest } from './http.js';
 
 export type AdminTenancy = Tenancy &
   DatabaseExtension & { outbox?: OutboxApi; webhooks?: WebhooksApi };
+
+/** Campo de `tenant.data` que el formulario "Nuevo tenant" pide (y el detalle permite editar). */
+export interface TenantField {
+  /** Llave en `tenant.data` (por ejemplo `adminEmail`). */
+  key: string;
+  label: string;
+  /** Por defecto `text`. */
+  type?: 'text' | 'email' | 'tel' | 'url' | 'number';
+  required?: boolean;
+  hint?: string;
+  placeholder?: string;
+}
 
 export interface AdminOptions {
   /** Secreto para los tokens CSRF (mínimo 32 caracteres). Usa una variable de entorno. */
@@ -33,6 +46,8 @@ export interface AdminOptions {
   maskedColumns?: RegExp;
   /** Tamaño máximo del body. Por defecto 1 MiB. */
   bodyLimitBytes?: number;
+  /** Tamaño máximo del logo que se sube desde el editor de tema. Por defecto 2 MiB. */
+  logoMaxBytes?: number;
   /** `/openapi.json` sin autenticación. Por defecto `true`. */
   publicDocs?: boolean;
   /** Nombre en la app de autenticación (2FA). Por defecto `tenancy-node`. */
@@ -42,6 +57,21 @@ export interface AdminOptions {
    * `@tenancy-node/admin-ui`; o la ruta de una UI compilada. Por defecto no se sirve.
    */
   ui?: boolean | string;
+  /**
+   * Detrás de un proxy (nginx, un balanceador), toma la IP del cliente de `X-Forwarded-For`
+   * para el límite de intentos de login y la auditoría. `true` confía en todo el encabezado
+   * (usa la primera IP); un número, en esa cantidad de proxies (cuenta desde la derecha).
+   * Por defecto `false`: la IP es la del socket. Actívalo solo si el panel no es accesible
+   * sin pasar por el proxy, porque el encabezado lo puede escribir cualquiera.
+   */
+  trustProxy?: boolean | number;
+  /**
+   * Campos de `tenant.data` que pide el formulario "Nuevo tenant" (por ejemplo el email del
+   * administrador inicial, que después lee el `seed`). Además se pueden cargar datos libres.
+   */
+  tenantFields?: readonly TenantField[];
+  /** IP del cliente a mano (por ejemplo `req.ip` de Express). Tiene prioridad sobre `trustProxy`. */
+  clientIp?: (req: IncomingMessage) => string | null | undefined;
 }
 
 export interface AdminContext {
@@ -51,9 +81,15 @@ export interface AdminContext {
   sessions: AdminSessions;
   audit: AuditLog;
   limiter: RateLimiter;
-  options: Required<Omit<AdminOptions, 'impersonationUrl' | 'allowedHosts' | 'ui'>> & {
+  options: Required<
+    Omit<
+      AdminOptions,
+      'impersonationUrl' | 'allowedHosts' | 'ui' | 'clientIp' | 'trustProxy' | 'tenantFields'
+    >
+  > & {
     impersonationUrl: AdminOptions['impersonationUrl'] | undefined;
     allowedHosts: readonly string[];
+    tenantFields: readonly TenantField[];
   };
   /** Registra una acción del usuario autenticado en la auditoría. */
   record(request: AdminRequest, input: Omit<AuditInput, 'adminUserId' | 'ip'>): Promise<void>;

@@ -9,7 +9,8 @@ import { ApiError, api, onUnauthorized, setCsrfToken } from '../src/api';
 import { AuthProvider } from '../src/auth';
 import { ToastProvider } from '../src/components/ui';
 import { Login } from '../src/pages/Login';
-import { themeVariables } from '../src/pages/ThemeEditor';
+import { NewTenant } from '../src/pages/NewTenant';
+import { ThemeEditor, themeVariables } from '../src/pages/ThemeEditor';
 import { Tenants } from '../src/pages/Tenants';
 import { matchPath } from '../src/router';
 
@@ -142,5 +143,120 @@ describe('pages', () => {
       cleanup();
       vi.restoreAllMocks();
     }
+  });
+
+  it('starts the theme editor from the app defaults and uploads the logo', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      if (String(url).endsWith('/theme/logo'))
+        return json(200, {
+          theme: { primary: '#0F172A', secondary: '#64748B', logo: 'theme/logo-abc.png' },
+          logoUrl: '//sucre.dental.bo/tenancy/assets/theme/logo-abc.png',
+        });
+      if (init?.method === 'PUT') return json(200, {});
+      return json(200, {
+        user: { id: 1, email: 'o@x', name: 'O', role: 'owner' },
+        permissions: ['tenants:write'],
+        csrfToken: 'tok',
+      });
+    });
+    render(
+      wrap(
+        <ThemeEditor
+          tenantId="sucre"
+          effectiveTheme={{ primary: '#0F172A', secondary: '#64748B' }}
+          defaultTheme={{ primary: '#0F172A', secondary: '#64748B' }}
+          logoUrl={null}
+          previewDomain="sucre.dental.bo"
+          canEdit
+        />,
+      ),
+    );
+    // El color por defecto de la app, no el azul del paquete; y el dominio real del tenant.
+    expect(screen.getByDisplayValue('#0F172A')).toBeTruthy();
+    expect(screen.queryByDisplayValue('#2563EB')).toBeNull();
+    expect(screen.getByTestId('theme-preview').textContent).toContain('sucre.dental.bo');
+    expect(screen.getByTestId('theme-preview').textContent).not.toContain('tuapp.com');
+
+    await waitFor(() =>
+      expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/auth/me'))).toBe(true),
+    );
+    const image = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'logo.png', {
+      type: 'image/png',
+    });
+    await userEvent.upload(screen.getByTestId('logo-file'), image);
+    await waitFor(() => expect(screen.getByTestId('preview-logo')).toBeTruthy());
+    expect(screen.getByTestId('preview-logo').getAttribute('src')).toBe(
+      '//sucre.dental.bo/tenancy/assets/theme/logo-abc.png',
+    );
+    const call = fetch.mock.calls.find(([url]) => String(url).endsWith('/theme/logo'))!;
+    expect(call[1]!.method).toBe('PUT');
+    expect(call[1]!.body).toBe(image);
+    const headers = call[1]!.headers as Record<string, string>;
+    expect([headers['content-type'], headers['x-csrf-token']]).toEqual(['image/png', 'tok']);
+    expect(screen.getByDisplayValue('theme/logo-abc.png')).toBeTruthy();
+
+    // Vaciar un campo lo borra del tema (null); si se omitiera, el servidor lo dejaría igual.
+    await userEvent.clear(screen.getByDisplayValue('theme/logo-abc.png'));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar tema' }));
+    await waitFor(() =>
+      expect(fetch.mock.calls.some(([url]) => String(url).endsWith('/tenants/sucre/theme'))).toBe(
+        true,
+      ),
+    );
+    const save = fetch.mock.calls.find(([url]) => String(url).endsWith('/tenants/sucre/theme'))!;
+    expect(JSON.parse(String(save[1]!.body))).toEqual({
+      primary: '#0F172A',
+      secondary: '#64748B',
+      logo: null,
+    });
+  });
+
+  it('asks for the fields the app declares when creating a tenant', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).endsWith('/auth/me'))
+        return json(200, {
+          user: { id: 1, email: 'o@x', name: 'O', role: 'owner' },
+          permissions: ['tenants:write'],
+          csrfToken: 'c',
+          config: {
+            centralDomains: ['dental.bo'],
+            tenantFields: [
+              {
+                key: 'adminEmail',
+                label: 'Email del administrador',
+                type: 'email',
+                required: true,
+              },
+            ],
+          },
+        });
+      if (String(url).endsWith('/tenants'))
+        return json(202, { id: 'sucre', progress: '/admin/api/tenants/sucre/progress' });
+      return json(404, { error: { code: 'ADMIN_NOT_FOUND', message: 'x' } });
+    });
+    class FakeEventSource {
+      addEventListener() {}
+      close() {}
+      onerror = null;
+    }
+    vi.stubGlobal('EventSource', FakeEventSource);
+    render(wrap(<NewTenant open onClose={() => undefined} />));
+    const email = await screen.findByLabelText('Email del administrador');
+    expect(screen.getByPlaceholderText('bolivar.dental.bo')).toBeTruthy();
+    await userEvent.type(screen.getByLabelText('Id'), 'sucre');
+    await userEvent.type(email, 'jefe@sucre.bo');
+    await userEvent.click(screen.getByRole('button', { name: 'Agregar dato' }));
+    await userEvent.type(screen.getByLabelText('Llave 1'), 'telefono');
+    await userEvent.type(screen.getByLabelText('Valor 1'), '4-123');
+    await userEvent.click(screen.getByRole('button', { name: 'Crear' }));
+    await waitFor(() => expect(screen.getByText('Creando sucre')).toBeTruthy());
+    const create = fetch.mock.calls.find(
+      ([url, init]) => String(url).endsWith('/tenants') && init?.method === 'POST',
+    )!;
+    expect(JSON.parse(String(create[1]!.body))).toEqual({
+      id: 'sucre',
+      data: { telefono: '4-123', adminEmail: 'jefe@sucre.bo' },
+    });
+    vi.unstubAllGlobals();
   });
 });

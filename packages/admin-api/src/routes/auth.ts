@@ -90,7 +90,12 @@ export function authRoutes(ctx: AdminContext) {
           changes: { mode },
           ip: request.ip,
         });
-        const body = { user, permissions: permissionsOf(user.role), expiresAt: session.expiresAt };
+        const body = {
+          user,
+          permissions: permissionsOf(user.role),
+          expiresAt: session.expiresAt,
+          config: adminConfig(ctx),
+        };
         if (mode === 'token') return { body: { ...body, token: session.token } };
         return {
           body: { ...body, csrfToken: ctx.sessions.csrfToken(session.id) },
@@ -125,6 +130,7 @@ export function authRoutes(ctx: AdminContext) {
             user,
             permissions: permissionsOf(user.role),
             csrfToken: request.sessionId ? ctx.sessions.csrfToken(request.sessionId) : null,
+            config: adminConfig(ctx),
           },
         };
       },
@@ -216,4 +222,9 @@ export function authRoutes(ctx: AdminContext) {
       },
     }),
   ];
+}
+
+/** Lo que la UI necesita de la configuración de la app. */
+function adminConfig(ctx: AdminContext) {
+  return { centralDomains: ctx.tenancy.centralDomains, tenantFields: ctx.options.tenantFields };
 }

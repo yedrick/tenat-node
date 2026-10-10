@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { IncomingMessage } from 'node:http';
 import { Readable } from 'node:stream';
-import { readJson } from '../src/http.js';
+import { clientIpOf, readJson, readRaw } from '../src/http.js';
 import {
   base32Decode,
   base32Encode,
@@ -84,6 +84,55 @@ describe('readJson', () => {
     await expect(readJson(await consumed(Buffer.from('')), 1024)).resolves.toBeUndefined();
     await expect(readJson(await consumed('nope'), 1024)).rejects.toMatchObject({
       code: 'ADMIN_INVALID_JSON',
+    });
+  });
+});
+
+describe('clientIpOf', () => {
+  const req = (forwarded?: string, socket = '127.0.0.1') =>
+    ({
+      socket: { remoteAddress: socket },
+      headers: forwarded === undefined ? {} : { 'x-forwarded-for': forwarded },
+    }) as unknown as IncomingMessage;
+
+  it('uses the socket address unless the proxy is trusted', () => {
+    expect(clientIpOf(req('203.0.113.1'))).toBe('127.0.0.1');
+    expect(clientIpOf(req('203.0.113.1'), 0)).toBe('127.0.0.1');
+    expect(clientIpOf(req(undefined), 1)).toBe('127.0.0.1');
+  });
+
+  it('skips the trusted proxies counting from the socket', () => {
+    expect(clientIpOf(req('203.0.113.1'), 1)).toBe('203.0.113.1');
+    // El cliente agregó una IP falsa: el proxy de confianza escribió la real al final.
+    expect(clientIpOf(req('1.2.3.4, 203.0.113.1'), 1)).toBe('203.0.113.1');
+    expect(clientIpOf(req('203.0.113.1, 10.0.0.2'), 2)).toBe('203.0.113.1');
+    expect(clientIpOf(req('203.0.113.1'), 5)).toBe('203.0.113.1');
+    expect(clientIpOf(req('1.2.3.4, 203.0.113.1'), true)).toBe('1.2.3.4');
+  });
+});
+
+describe('readRaw', () => {
+  it('reads binary bodies with a size limit', async () => {
+    const make = (chunks: Buffer[]) => Readable.from(chunks) as unknown as IncomingMessage;
+    const bytes = Buffer.from([0x89, 0x50, 0x00, 0xff]);
+    await expect(readRaw(make([bytes]), 10)).resolves.toEqual(bytes);
+    await expect(readRaw(make([]), 10)).resolves.toBeUndefined();
+    await expect(readRaw(make([Buffer.alloc(11)]), 10)).rejects.toMatchObject({
+      code: 'ADMIN_PAYLOAD_TOO_LARGE',
+    });
+  });
+
+  it('uses the Buffer left by express.raw() and refuses other parsers', async () => {
+    const consumed = async (body: unknown) => {
+      const req = Readable.from([Buffer.from('x')]) as unknown as IncomingMessage;
+      for await (const _chunk of req) void _chunk;
+      return Object.assign(req, { body });
+    };
+    await expect(readRaw(await consumed(Buffer.from('png')), 10)).resolves.toEqual(
+      Buffer.from('png'),
+    );
+    await expect(readRaw(await consumed({}), 10)).rejects.toMatchObject({
+      code: 'ADMIN_BODY_ALREADY_PARSED',
     });
   });
 });

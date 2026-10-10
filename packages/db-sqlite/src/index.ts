@@ -111,7 +111,12 @@ export function sqlite(options: SqliteDriverOptions = {}): DatabaseDriver {
           createQueryCompiler: () => dialect.createQueryCompiler(),
         },
       });
-      return { db, native, destroy: () => db.destroy() };
+      // Kysely solo cierra la base si alguna vez la usó: si no, el archivo quedaría abierto.
+      const destroy = async () => {
+        await db.destroy();
+        if (native.open) native.close();
+      };
+      return { db, native, destroy };
     },
 
     async databaseExists(_admin, name) {

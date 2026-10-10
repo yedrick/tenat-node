@@ -10,10 +10,12 @@ import { AdminUsers } from './auth/users.js';
 import type { AdminContext, AdminOptions, AdminTenancy } from './context.js';
 import {
   AdminHttpError,
+  clientIpOf,
   compile,
   errorToResponse,
   match,
   readJson,
+  readRaw,
   sendJson,
   validate,
   type AdminRequest,
@@ -79,6 +81,8 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
     impersonationUrl: options.impersonationUrl,
     maskedColumns: options.maskedColumns ?? /(password|secret|token|hash|salt|api_?key|otp|2fa)/i,
     bodyLimitBytes: options.bodyLimitBytes ?? 1024 * 1024,
+    logoMaxBytes: options.logoMaxBytes ?? 2 * 1024 * 1024,
+    tenantFields: validateTenantFields(options.tenantFields ?? []),
     publicDocs: options.publicDocs ?? true,
     issuer: options.issuer ?? 'tenancy-node',
   };
@@ -146,7 +150,7 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
       query: url.searchParams,
       body: undefined,
       headers: req.headers,
-      ip: req.socket.remoteAddress ?? null,
+      ip: options.clientIp?.(req) ?? clientIpOf(req, options.trustProxy ?? false),
       user: null,
       sessionId: null,
       raw: req,
@@ -197,7 +201,9 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
         }
       }
 
-      if (method !== 'GET' && method !== 'HEAD') {
+      if (definition.upload) {
+        request.body = await readRaw(req, definition.upload.maxBytes);
+      } else if (method !== 'GET' && method !== 'HEAD') {
         const raw = await readJson(req, resolved.bodyLimitBytes);
         request.body = definition.body ? validate(definition.body, raw) : raw;
       }
@@ -255,6 +261,20 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
   return { handle, openapi, prefix: resolved.prefix, context, uiPath: uiRoot ? uiBase : undefined };
 }
 
+const FIELD_KEY = /^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/;
+
+function validateTenantFields(fields: AdminOptions['tenantFields'] & object) {
+  const seen = new Set<string>();
+  for (const field of fields) {
+    if (!FIELD_KEY.test(field.key))
+      throw new InvalidConfigError(`admin tenantFields: invalid key "${field.key}"`);
+    if (seen.has(field.key))
+      throw new InvalidConfigError(`admin tenantFields: duplicated key "${field.key}"`);
+    seen.add(field.key);
+  }
+  return fields;
+}
+
 function buildOpenApi(
   definitions: readonly RouteDefinition[],
   prefix: string,
@@ -295,6 +315,19 @@ function buildOpenApi(
       ...(params.length + query.length > 0 ? { parameters: [...params, ...query] } : {}),
       ...(schema
         ? { requestBody: { required: true, content: { 'application/json': { schema } } } }
+        : {}),
+      ...(d.upload
+        ? {
+            requestBody: {
+              required: true,
+              content: Object.fromEntries(
+                d.upload.contentTypes.map((type) => [
+                  type,
+                  { schema: { type: 'string', format: 'binary' } },
+                ]),
+              ),
+            },
+          }
         : {}),
       responses: d.streaming
         ? { '200': { description: 'text/event-stream' } }

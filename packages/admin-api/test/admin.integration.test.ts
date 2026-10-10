@@ -66,7 +66,12 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')('Admin API (PostgreSQ
   const call = (
     method: string,
     path: string,
-    options: { body?: unknown; raw?: string; headers?: Record<string, string>; host?: string } = {},
+    options: {
+      body?: unknown;
+      raw?: string | Buffer;
+      headers?: Record<string, string>;
+      host?: string;
+    } = {},
   ) =>
     new Promise<Response>((resolve, reject) => {
       const payload =
@@ -442,6 +447,79 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')('Admin API (PostgreSQ
       expect((await call('DELETE', '/tenants/bolivar/theme', { headers })).status).toBe(204);
     });
 
+    it('shows the effective theme and uploads the logo to the tenant storage', async () => {
+      const { headers } = await login('admin@tuapp.com');
+      const detail = await call('GET', '/tenants/bolivar', { headers });
+      expect(detail.body.tenant.theme).toBeNull();
+      // Sin tema propio, el editor recibe el tema por defecto de la app (no un azul fijo).
+      expect(detail.body.effectiveTheme).toEqual(tenancy.theme.defaults.toJSON());
+      expect(detail.body.defaultTheme).toEqual(tenancy.theme.defaults.toJSON());
+      expect(detail.body.previewDomain).toBe('bolivar.tuapp.com');
+      expect(detail.body.logoUrl).toBeNull();
+
+      const upload = (raw: string | Buffer, type: string, as = headers) =>
+        call('PUT', '/tenants/bolivar/theme/logo', {
+          headers: { ...as, 'content-type': type },
+          raw,
+        });
+      const png = Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        Buffer.from('datos'),
+      ]);
+      const first = await upload(png, 'image/png');
+      expect(first.status).toBe(200);
+      const path = first.body.theme.logo as string;
+      expect(path).toMatch(/^theme\/logo-[0-9a-f]{16}\.png$/);
+      expect(first.body.logoUrl).toBe(`//bolivar.tuapp.com/tenancy/assets/${path}`);
+      expect(await tenancy.run('bolivar', () => tenancy.storage().get(path))).toEqual(
+        new Uint8Array(png),
+      );
+      // La ruta queda en el tema del tenant (base central).
+      expect((await tenancy.tenants.find('bolivar'))!.theme!.logo).toBe(path);
+
+      // Un logo nuevo reemplaza al anterior y borra el archivo viejo.
+      const second = await upload(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]), 'image/jpeg');
+      expect(second.body.theme.logo).toMatch(/\.jpg$/);
+      expect(await tenancy.run('bolivar', () => tenancy.storage().exists(path))).toBe(false);
+
+      // El tipo se decide por el contenido: un SVG (o un PNG falso) no pasa.
+      const svg = await upload(
+        '<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>',
+        'image/png',
+      );
+      expect([svg.status, svg.body.error.code]).toEqual([415, 'ADMIN_UNSUPPORTED_IMAGE']);
+      expect((await call('PUT', '/tenants/bolivar/theme/logo', { headers })).status).toBe(422);
+      const big = await upload(Buffer.alloc(2 * 1024 * 1024 + 1), 'image/png');
+      expect(big.status).toBe(413);
+      const support = await login('soporte@tuapp.com');
+      expect((await upload(png, 'image/png', support.headers)).status).toBe(403);
+
+      const audited = await tenancy.database
+        .central()
+        .db.selectFrom('audit_log')
+        .select('tenant_id')
+        .where('action', '=', 'theme.logo_upload')
+        .execute();
+      expect(audited).toEqual([{ tenant_id: 'bolivar' }, { tenant_id: 'bolivar' }]);
+      expect((await call('DELETE', '/tenants/bolivar/theme', { headers })).status).toBe(204);
+      await tenancy.run('bolivar', () => tenancy.storage().deleteAll());
+    });
+
+    it('edits and removes keys of tenant.data', async () => {
+      const { headers } = await login('admin@tuapp.com');
+      const set = await call('PATCH', '/tenants/bolivar', {
+        headers,
+        body: { data: { telefono: '555-1234', borrar: 'x' } },
+      });
+      expect(set.body.data).toMatchObject({ telefono: '555-1234', borrar: 'x' });
+      const removed = await call('PATCH', '/tenants/bolivar', {
+        headers,
+        body: { removeData: ['borrar'] },
+      });
+      expect(removed.body.data.telefono).toBe('555-1234');
+      expect(removed.body.data).not.toHaveProperty('borrar');
+    });
+
     it('enforces roles on every route', async () => {
       const support = await login('soporte@tuapp.com');
       expect((await call('GET', '/tenants', { headers: support.headers })).status).toBe(200);
@@ -787,6 +865,81 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')('Admin API (PostgreSQ
         path: '/tenants',
         adminUserId: null,
       });
+    });
+  });
+
+  describe('behind a proxy, with app-declared tenant fields', () => {
+    let proxied: Awaited<ReturnType<typeof serveAdmin>>;
+    let mainPort = 0;
+    beforeAll(async () => {
+      proxied = await serveAdmin(tenancy, {
+        port: 0,
+        sessionSecret: 'x'.repeat(40),
+        secureCookies: false,
+        trustProxy: 1,
+        loginRateLimit: { max: 2, windowMs: 60_000 },
+        tenantFields: [
+          { key: 'adminEmail', label: 'Email del administrador', type: 'email', required: true },
+        ],
+      });
+      mainPort = port;
+      port = (proxied.server.address() as { port: number }).port;
+    });
+    afterAll(async () => {
+      port = mainPort;
+      await proxied?.close();
+    });
+
+    it('rate-limits each client by its X-Forwarded-For address, not the proxy', async () => {
+      const from = (ip: string, email: string, password = 'incorrecta') =>
+        call('POST', '/auth/login', {
+          body: { email, password },
+          headers: { 'x-forwarded-for': ip },
+        });
+      // Correos distintos: solo cuenta el límite por IP.
+      await from('203.0.113.1', 'uno@tuapp.com');
+      await from('203.0.113.1', 'dos@tuapp.com');
+      expect((await from('203.0.113.1', 'tres@tuapp.com')).status).toBe(429);
+      // Otro cliente detrás del mismo proxy sigue entrando.
+      expect((await from('198.51.100.7', 'owner@tuapp.com', PASSWORD)).status).toBe(200);
+      // Un X-Forwarded-For falso que agrega el cliente no cambia la IP que ve el proxy de confianza.
+      expect((await from('1.2.3.4, 203.0.113.1', 'cuatro@tuapp.com')).status).toBe(429);
+      const failures = await tenancy.database
+        .central()
+        .db.selectFrom('audit_log')
+        .select('ip')
+        .where('action', '=', 'auth.login_failed')
+        .where('ip', '=', '203.0.113.1')
+        .execute();
+      expect(failures.length).toBeGreaterThanOrEqual(2);
+      proxied.api.context.limiter.clear();
+    });
+
+    it('sends the declared fields to the UI and requires them on create', async () => {
+      const { headers } = await login('owner@tuapp.com');
+      const me = await call('GET', '/auth/me', { headers });
+      expect(me.body.config).toEqual({
+        centralDomains: ['tuapp.com'],
+        tenantFields: [
+          { key: 'adminEmail', label: 'Email del administrador', type: 'email', required: true },
+        ],
+      });
+      const missing = await call('POST', '/tenants', { headers, body: { id: 'sucre' } });
+      expect(missing.status).toBe(422);
+      expect(missing.body.error.details).toEqual([
+        { path: 'data.adminEmail', message: 'Email del administrador is required' },
+      ]);
+      const created = await call('POST', '/tenants', {
+        headers,
+        body: { id: 'sucre', data: { adminEmail: 'jefe@sucre.bo', telefono: '4-123' } },
+      });
+      expect(created.status).toBe(202);
+      await call('GET', '/tenants/sucre/progress', { headers });
+      expect((await tenancy.tenants.find('sucre'))!.data).toEqual({
+        adminEmail: 'jefe@sucre.bo',
+        telefono: '4-123',
+      });
+      await tenancy.tenants.delete('sucre');
     });
   });
 });

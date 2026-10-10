@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { del, get, post } from '../api';
+import { del, get, patch, post } from '../api';
 import { useAuth } from '../auth';
+import { DataEditor, dataFromRows, rowsFromData, type DataRow } from '../components/DataEditor';
 import {
   Badge,
   Button,
@@ -60,7 +61,14 @@ export function TenantDetail({ id }: { id: string }) {
       {tab === 'overview' && <Overview detail={d} />}
       {tab === 'domains' && <Domains detail={d} />}
       {tab === 'theme' && (
-        <ThemeEditor tenantId={id} theme={d.tenant.theme} canEdit={can('tenants:write')} />
+        <ThemeEditor
+          tenantId={id}
+          effectiveTheme={d.effectiveTheme ?? d.tenant.theme ?? {}}
+          defaultTheme={d.defaultTheme ?? {}}
+          logoUrl={d.logoUrl ?? null}
+          previewDomain={d.previewDomain ?? null}
+          canEdit={can('tenants:write')}
+        />
       )}
       {tab === 'database' && <Database id={id} />}
       {tab === 'data' && <DataExplorer tenantId={id} />}
@@ -146,9 +154,7 @@ function Overview({ detail }: { detail: Detail }) {
           )}
           <dt className="text-muted">Datos</dt>
           <dd>
-            <pre className="overflow-x-auto rounded bg-surface p-2 text-xs">
-              {JSON.stringify(t.data, null, 2)}
-            </pre>
+            <TenantData id={t.id} data={t.data} canEdit={can('tenants:write')} />
           </dd>
         </dl>
         <h3 className="mb-2 mt-4 text-sm font-semibold">Último aprovisionamiento</h3>
@@ -453,5 +459,53 @@ function Errors({ detail }: { detail: Detail }) {
         ]}
       />
     </Card>
+  );
+}
+
+/** `tenant.data`: se ve como JSON y se edita llave por llave (PATCH combina; removeData borra). */
+function TenantData({
+  id,
+  data,
+  canEdit,
+}: {
+  id: string;
+  data: Record<string, unknown>;
+  canEdit: boolean;
+}) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const [rows, setRows] = useState<DataRow[] | null>(null);
+  const save = useMutation({
+    mutationFn: () => {
+      const next = dataFromRows(rows ?? []);
+      const removeData = Object.keys(data).filter((key) => !(key in next));
+      return patch(`/tenants/${encodeURIComponent(id)}`, { data: next, removeData });
+    },
+    onSuccess: () => {
+      toast('Datos guardados');
+      setRows(null);
+      void client.invalidateQueries({ queryKey: ['tenant', id] });
+    },
+  });
+  if (rows === null)
+    return (
+      <div className="space-y-2">
+        <pre className="overflow-x-auto rounded bg-surface p-2 text-xs">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+        {canEdit && <Button onClick={() => setRows(rowsFromData(data))}>Editar datos</Button>}
+      </div>
+    );
+  return (
+    <div className="space-y-2">
+      <ErrorBox error={save.error} />
+      <DataEditor rows={rows} onChange={setRows} disabled={save.isPending} />
+      <div className="flex justify-end gap-2">
+        <Button onClick={() => (setRows(null), save.reset())}>Cancelar</Button>
+        <Button variant="primary" busy={save.isPending} onClick={() => save.mutate()}>
+          Guardar datos
+        </Button>
+      </div>
+    </div>
   );
 }
