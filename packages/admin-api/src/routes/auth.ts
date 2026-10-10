@@ -226,5 +226,12 @@ export function authRoutes(ctx: AdminContext) {
 
 /** Lo que la UI necesita de la configuración de la app. */
 function adminConfig(ctx: AdminContext) {
-  return { centralDomains: ctx.tenancy.centralDomains, tenantFields: ctx.options.tenantFields };
+  const users = ctx.options.tenantUsers;
+  return {
+    centralDomains: ctx.tenancy.centralDomains,
+    tenantFields: ctx.options.tenantFields,
+    tenantUsers: users
+      ? { canCreate: typeof users.create === 'function', roles: users.roles ?? [] }
+      : null,
+  };
 }

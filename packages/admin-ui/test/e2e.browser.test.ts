@@ -59,13 +59,30 @@ describe.skipIf(
                     .addColumn('api_key', 'text')
                     .execute(),
               },
+              // Los usuarios de la app viven en la base de cada tenant.
+              '002_usuarios': {
+                up: (db) =>
+                  db.schema
+                    .createTable('usuarios')
+                    .addColumn('id', 'text', (c) => c.primaryKey())
+                    .addColumn('nombre', 'text', (c) => c.notNull())
+                    .addColumn('email', 'text', (c) => c.notNull().unique())
+                    .addColumn('rol', 'text', (c) => c.notNull())
+                    .addColumn('password', 'text')
+                    .execute(),
+              },
             },
           },
-          seed: async (db) =>
-            void (await db
+          seed: async (db) => {
+            await db
               .insertInto('clientes')
               .values([{ id: 1, nombre: 'Ana', api_key: 'sk_live_secreta' }])
-              .execute()),
+              .execute();
+            await db
+              .insertInto('usuarios')
+              .values({ id: 'u1', nombre: 'Ana Admin', email: 'ana@bolivar.bo', rol: 'ADMIN' })
+              .execute();
+          },
         }),
         outbox(),
         webhooks({ allowPrivateNetworks: true }),
@@ -84,6 +101,47 @@ describe.skipIf(
       sessionSecret: 'k'.repeat(40),
       secureCookies: false,
       ui: dist,
+      // "Entrar" abre una URL local (la app del tenant no existe en el test).
+      impersonationUrl: ({ tenantId, token }) =>
+        `${base}/api/health?tenant=${tenantId}&token=${token}`,
+      tenantUsers: {
+        roles: [
+          { value: 'ADMIN', label: 'Administrador' },
+          { value: 'RECEPCION', label: 'Recepción' },
+        ],
+        async list({ search, page, perPage }) {
+          let query = tenancy.db().selectFrom('usuarios');
+          if (search) query = query.where('nombre', 'ilike', `%${search}%`);
+          const [rows, count] = await Promise.all([
+            query
+              .select(['id', 'nombre', 'email', 'rol'])
+              .orderBy('nombre')
+              .limit(perPage)
+              .offset((page - 1) * perPage)
+              .execute(),
+            query.select((eb) => eb.fn.countAll().as('n')).executeTakeFirstOrThrow(),
+          ]);
+          return {
+            items: rows.map((r) => ({ id: r.id, name: r.nombre, email: r.email, role: r.rol })),
+            total: Number(count.n),
+          };
+        },
+        async create(input) {
+          const id = `u${Date.now()}`;
+          await tenancy
+            .db()
+            .insertInto('usuarios')
+            .values({
+              id,
+              nombre: input.name,
+              email: input.email,
+              rol: input.role ?? 'RECEPCION',
+              password: input.password ? 'hash-de-prueba' : null,
+            })
+            .execute();
+          return { id, name: input.name, email: input.email, role: input.role ?? null };
+        },
+      },
     });
     base = `http://127.0.0.1:${(admin.server.address() as { port: number }).port}/admin`;
     browser = await chromium.launch();
@@ -164,6 +222,33 @@ describe.skipIf(
     const saved = (await tenancy.tenants.findOrFail('bolivar')).theme?.primary.value;
     expect(saved).toBe('#E4002B');
 
+    // Usuarios de la app del tenant: verlos, crear uno con contraseña generada
+    await page.getByRole('tab', { name: 'Usuarios' }).click();
+    await page.getByText('Ana Admin', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Nuevo usuario' }).click();
+    await page.getByLabel('Nombre completo').fill('Beto Recepción');
+    await page.getByLabel('Email').fill('beto@bolivar.bo');
+    await page.getByLabel('Rol').selectOption('RECEPCION');
+    await page.getByRole('button', { name: 'Generar' }).click();
+    await page.getByRole('button', { name: 'Crear usuario' }).click();
+    expect(await page.getByTestId('initial-password').textContent()).toMatch(/^\S{16}$/);
+    await page.getByRole('button', { name: 'Listo' }).click();
+    await page.getByText('Beto Recepción', { exact: true }).waitFor();
+    await shot(page, '07-tenant-users');
+
+    // "Entrar" abre la app del tenant en otra pestaña con un token de un solo uso
+    const popup = page.waitForEvent('popup');
+    await page.getByRole('button', { name: 'Entrar como Ana Admin' }).click();
+    const tab = await popup;
+    await tab.waitForURL(/token=/);
+    expect(tab.url()).toContain('tenant=bolivar');
+    await tab.close();
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Entrar a Club Bolívar' }).waitFor();
+    await page.getByRole('button', { name: 'Entrar como Beto Recepción' }).waitFor();
+    await shot(page, '08-enter');
+    await page.keyboard.press('Escape');
+
     // Dominios
     await page.getByRole('tab', { name: 'Dominios' }).click();
     await page.getByLabel('Nuevo dominio').fill('clubbolivar.com');
@@ -173,7 +258,7 @@ describe.skipIf(
     // Explorador de datos: la columna sensible se oculta
     await page.getByRole('tab', { name: 'Datos', exact: true }).click();
     await page.getByRole('button', { name: /clientes/ }).click();
-    await page.getByText('Ana').waitFor();
+    await page.getByText('Ana', { exact: true }).waitFor();
     expect(await page.content()).not.toContain('sk_live_secreta');
     expect(await page.getByText('••••••').count()).toBe(1);
     await shot(page, '05-data');
@@ -203,6 +288,16 @@ describe.skipIf(
     await page.getByText('theme.update').first().waitFor();
     expect(await page.getByRole('cell', { name: 'owner@tuapp.com' }).count()).toBeGreaterThan(0);
     await shot(page, '06-audit');
+
+    // Lista de tenants (con "Entrar" por fila) y el modo oscuro
+    await page.getByRole('link', { name: 'Tenants' }).click();
+    await page.getByRole('button', { name: 'Entrar a Club Bolívar' }).waitFor();
+    await shot(page, '09-tenants');
+    await page.getByRole('button', { name: 'Usar modo oscuro' }).click();
+    expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+    await page.waitForTimeout(400); // fin de la transición de colores, para la captura
+    await shot(page, '10-tenants-dark');
+    await page.getByRole('button', { name: 'Usar modo claro' }).click();
     await page.getByRole('button', { name: 'Salir' }).click();
     await page.getByRole('button', { name: 'Entrar' }).waitFor();
     await page.close();

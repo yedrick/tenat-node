@@ -5,6 +5,9 @@ import { App } from './App';
 import { AuthProvider } from './auth';
 import { ToastProvider } from './components/ui';
 import './styles.css';
+import { applyColorMode } from './theme';
+
+applyColorMode();
 
 const client = new QueryClient({
   defaultOptions: {

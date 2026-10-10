@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { followProgress, post, type ProgressEvent } from '../api';
 import { useAuth } from '../auth';
 import { DataEditor, dataFromRows, type DataRow } from '../components/DataEditor';
-import { Badge, Button, ErrorBox, Field, Input, Modal } from '../components/ui';
+import { Button, ErrorBox, Field, Input, Modal, StepBadge } from '../components/ui';
 import type { TenantField } from '../types';
 import { navigate } from '../router';
 
@@ -206,7 +206,7 @@ export function NewTenant({ open, onClose }: { open: boolean; onClose: () => voi
               <li key={s.step} className="flex items-start justify-between gap-2 text-sm">
                 <span>{STEP_LABELS[s.step] ?? s.step}</span>
                 <span className="text-right">
-                  <Badge>{s.status}</Badge>
+                  <StepBadge status={s.status} />
                   {s.durationMs != null && (
                     <span className="ml-1 text-xs text-muted">{s.durationMs} ms</span>
                   )}

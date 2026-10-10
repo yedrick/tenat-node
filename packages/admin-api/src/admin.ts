@@ -24,6 +24,7 @@ import {
 import { authRoutes } from './routes/auth.js';
 import { eventRoutes, systemRoutes } from './routes/system.js';
 import { tenantRoutes } from './routes/tenants.js';
+import { tenantUserRoutes } from './routes/tenant-users.js';
 import { resolveUiRoot, serveUi } from './ui.js';
 
 const UI_HEADERS = {
@@ -83,6 +84,7 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
     bodyLimitBytes: options.bodyLimitBytes ?? 1024 * 1024,
     logoMaxBytes: options.logoMaxBytes ?? 2 * 1024 * 1024,
     tenantFields: validateTenantFields(options.tenantFields ?? []),
+    tenantUsers: options.tenantUsers,
     publicDocs: options.publicDocs ?? true,
     issuer: options.issuer ?? 'tenancy-node',
   };
@@ -102,6 +104,7 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
   const definitions: RouteDefinition[] = [
     ...authRoutes(context),
     ...tenantRoutes(context),
+    ...tenantUserRoutes(context),
     ...eventRoutes(context),
     ...systemRoutes(context),
   ];

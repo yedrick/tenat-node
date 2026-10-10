@@ -104,7 +104,19 @@ export interface TenantField {
   placeholder?: string;
 }
 
+/** Usuario de la app dentro de un tenant (`createAdminApi({ tenantUsers })`). */
+export interface TenantUser {
+  id: string;
+  name: string;
+  email: string | null;
+  role: string | null;
+  active: boolean;
+  lastLoginAt: string | null;
+}
+
 export interface AdminConfig {
   centralDomains: string[];
   tenantFields: TenantField[];
+  /** `null`: la app no configuró `tenantUsers`. Falta en servidores anteriores. */
+  tenantUsers?: { canCreate: boolean; roles: { value: string; label: string }[] } | null;
 }

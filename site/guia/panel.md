@@ -171,6 +171,7 @@ const admin = createAdminApi(tenancy, {
 | `trustProxy`              | `false`                                                | IP del cliente desde `X-Forwarded-For` (ver [Detrás de un proxy](#detras-de-un-proxy)) |
 | `clientIp`                | —                                                      | `(req) => ip` propia; tiene prioridad sobre `trustProxy`    |
 | `tenantFields`            | `[]`                                                   | Campos de `tenant.data` que pide "Nuevo tenant" (ver [Datos del tenant](#datos-del-tenant)) |
+| `tenantUsers`             | —                                                      | Cómo listar y crear los usuarios de la app en cada tenant (ver [Usuarios de cada tenant](#usuarios-de-cada-tenant)) |
 | `publicDocs`              | `true`                                                 | `/openapi.json` sin autenticación                           |
 | `issuer`                  | `tenancy-node`                                         | Nombre que muestra la app de autenticación (2FA)            |
 | `ui`                      | apagado                                                | `true` sirve `@tenancy-node/admin-ui`; o la ruta de una UI compilada |
@@ -295,6 +296,50 @@ seed: async (db, tenant) => {
   await crearAdministrador(db, String(tenant.data.adminEmail));
 },
 ```
+
+### Usuarios de cada tenant
+
+Los usuarios de tu app viven en la base de cada tenant, con tus tablas y tus reglas: el panel no los conoce. Con `tenantUsers` le dices cómo listarlos y crearlos, y el panel suma una pestaña **Usuarios** en cada tenant (buscar, crear con contraseña generada y "Entrar como") y un buscador de usuarios en el botón **Entrar**.
+
+```ts
+import { AdminHttpError, createAdminApi } from '@tenancy-node/admin-api';
+
+createAdminApi(tenancy, {
+  sessionSecret,
+  tenantUsers: {
+    roles: [
+      { value: 'ADMIN', label: 'Administrador' },
+      { value: 'RECEPCION', label: 'Recepción' },
+    ],
+    // Corre en el contexto del tenant: tenancy.db() / tenancy.pool() apuntan a su base.
+    async list({ search, page, perPage }) {
+      let q = tenancy.db().selectFrom('users');
+      if (search) q = q.where('full_name', 'like', `%${search}%`);
+      const rows = await q.selectAll().limit(perPage).offset((page - 1) * perPage).execute();
+      const { n } = await q.select((eb) => eb.fn.countAll().as('n')).executeTakeFirstOrThrow();
+      return {
+        items: rows.map((u) => ({ id: u.id, name: u.full_name, email: u.email, role: u.role, active: u.active })),
+        total: Number(n),
+      };
+    },
+    async create({ name, email, role, password }) {
+      if (await emailExists(email)) throw new AdminHttpError(409, 'EMAIL_TAKEN', 'Ese email ya existe');
+      return crearUsuario({ name, email, role, password }); // tu lógica: hash, reglas, auditoría
+    },
+  },
+});
+```
+
+- `GET /tenants/:id/users?search&page&perPage` (`tenants:read`) y `POST /tenants/:id/users` (`tenants:write`, body `{ name, email, role?, password? }`).
+- El `id` de cada usuario es lo que recibe "Entrar como" (`userIdentifier` en `consumeImpersonationToken`).
+- La respuesta solo lleva `id`, `name`, `email`, `role`, `active` y `lastLoginAt`: aunque tu `list` devuelva un hash, no sale del servidor.
+- La creación queda en la auditoría (`tenant_user.create`) sin la contraseña. Si `create` lanza `AdminHttpError`, el panel muestra ese código y mensaje.
+- Sin `create`, el panel solo lista. Sin `tenantUsers`, las rutas responden 404 `ADMIN_FEATURE_DISABLED` y "Entrar" pide el usuario a mano.
+- Solo con el tenant aprovisionado: si no, 409 `ADMIN_TENANT_NOT_READY`.
+
+### Entrar a un tenant
+
+El botón **Entrar** (en la lista y en el detalle) abre la app del tenant en otra pestaña con la sesión del usuario elegido, usando un token de un solo uso ([Impersonación](#impersonacion)). La pestaña se abre en el mismo clic, así el navegador no la bloquea; si aun así no se puede abrir, el panel muestra el enlace para copiarlo.
 
 ### Tema y logo
 

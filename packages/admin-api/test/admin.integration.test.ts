@@ -1,7 +1,13 @@
 import { request as httpRequest } from 'node:http';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { createTenancy } from '@tenancy-node/core';
-import { consumeImpersonationToken, serveAdmin, totp } from '@tenancy-node/admin-api';
+import {
+  AdminHttpError,
+  consumeImpersonationToken,
+  serveAdmin,
+  totp,
+  type TenantUser,
+} from '@tenancy-node/admin-api';
 import { database } from '@tenancy-node/db';
 import { postgres } from '@tenancy-node/db-postgres';
 import { outbox } from '@tenancy-node/outbox';
@@ -831,6 +837,13 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')('Admin API (PostgreSQ
   });
 
   describe('HTTP hardening', () => {
+    it('answers 404 ADMIN_FEATURE_DISABLED for tenant users when the app does not configure them', async () => {
+      const { headers } = await login('owner@tuapp.com');
+      const res = await call('GET', '/tenants/bolivar/users', { headers });
+      expect([res.status, res.body.error.code]).toEqual([404, 'ADMIN_FEATURE_DISABLED']);
+      expect((await call('GET', '/auth/me', { headers })).body.config.tenantUsers).toBeNull();
+    });
+
     it('rejects bad bodies, unknown routes and wrong methods', async () => {
       const { headers } = await login('owner@tuapp.com');
       expect((await call('POST', '/tenants', { headers, raw: '{"id":' })).body.error.code).toBe(
@@ -871,6 +884,8 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')('Admin API (PostgreSQ
   describe('behind a proxy, with app-declared tenant fields', () => {
     let proxied: Awaited<ReturnType<typeof serveAdmin>>;
     let mainPort = 0;
+    const appUsers = new Map<string, (TenantUser & { passwordHash?: string })[]>();
+    const passwords: (string | undefined)[] = [];
     beforeAll(async () => {
       proxied = await serveAdmin(tenancy, {
         port: 0,
@@ -881,6 +896,35 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')('Admin API (PostgreSQ
         tenantFields: [
           { key: 'adminEmail', label: 'Email del administrador', type: 'email', required: true },
         ],
+        tenantUsers: {
+          roles: [
+            { value: 'ADMIN', label: 'Administrador' },
+            { value: 'RECEPCION', label: 'Recepción' },
+          ],
+          async list({ search, page, perPage }, tenant) {
+            // Corre en el contexto del tenant: la app usaría tenancy.db() acá.
+            const all = (appUsers.get(tenancy.currentId()!) ?? []).filter(
+              (u) => !search || u.name.includes(search) || u.email?.includes(search),
+            );
+            expect(tenant.id.value).toBe(tenancy.currentId());
+            return { items: all.slice((page - 1) * perPage, page * perPage), total: all.length };
+          },
+          async create(input) {
+            const list = appUsers.get(tenancy.currentId()!) ?? [];
+            if (list.some((u) => u.email === input.email))
+              throw new AdminHttpError(409, 'APP_EMAIL_TAKEN', 'Ese email ya existe');
+            passwords.push(input.password);
+            const user = {
+              id: `u${list.length + 1}`,
+              name: input.name,
+              email: input.email,
+              role: input.role ?? null,
+              passwordHash: 'no-debe-salir',
+            };
+            appUsers.set(tenancy.currentId()!, [...list, user]);
+            return user;
+          },
+        },
       });
       mainPort = port;
       port = (proxied.server.address() as { port: number }).port;
@@ -915,10 +959,83 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')('Admin API (PostgreSQ
       proxied.api.context.limiter.clear();
     });
 
+    it('lists and creates the app users of a tenant through tenantUsers', async () => {
+      const { headers } = await login('owner@tuapp.com');
+      const me = await call('GET', '/auth/me', { headers });
+      expect(me.body.config.tenantUsers).toEqual({
+        canCreate: true,
+        roles: [
+          { value: 'ADMIN', label: 'Administrador' },
+          { value: 'RECEPCION', label: 'Recepción' },
+        ],
+      });
+      expect((await call('GET', '/tenants/bolivar/users', { headers })).body).toEqual({
+        items: [],
+        total: 0,
+        page: 1,
+        perPage: 20,
+      });
+      const created = await call('POST', '/tenants/bolivar/users', {
+        headers,
+        body: {
+          name: ' Ana Pérez ',
+          email: 'ANA@bolivar.bo',
+          role: 'ADMIN',
+          password: 'Clave-segura-1',
+        },
+      });
+      expect(created.status).toBe(201);
+      // Solo los campos conocidos: el hash que devuelve la app no sale.
+      expect(created.body).toEqual({
+        id: 'u1',
+        name: 'Ana Pérez',
+        email: 'ana@bolivar.bo',
+        role: 'ADMIN',
+        active: true,
+        lastLoginAt: null,
+      });
+      expect(passwords).toEqual(['Clave-segura-1']);
+      const listed = await call('GET', '/tenants/bolivar/users?search=Ana', { headers });
+      expect(listed.body.items.map((u: TenantUser) => u.id)).toEqual(['u1']);
+
+      // Errores de la app y validaciones del panel
+      const taken = await call('POST', '/tenants/bolivar/users', {
+        headers,
+        body: { name: 'Otra', email: 'ana@bolivar.bo' },
+      });
+      expect([taken.status, taken.body.error.code]).toEqual([409, 'APP_EMAIL_TAKEN']);
+      const badRole = await call('POST', '/tenants/bolivar/users', {
+        headers,
+        body: { name: 'X', email: 'x@bolivar.bo', role: 'DIOS' },
+      });
+      expect(badRole.status).toBe(422);
+      expect((await call('GET', '/tenants/nadie/users', { headers })).status).toBe(404);
+      const support = await login('soporte@tuapp.com');
+      expect(
+        (
+          await call('POST', '/tenants/bolivar/users', {
+            headers: support.headers,
+            body: { name: 'X', email: 'x@bolivar.bo' },
+          })
+        ).status,
+      ).toBe(403);
+
+      // La auditoría nunca guarda la contraseña.
+      const audited = await tenancy.database
+        .central()
+        .db.selectFrom('audit_log')
+        .selectAll()
+        .where('action', '=', 'tenant_user.create')
+        .execute();
+      expect(audited).toHaveLength(1);
+      expect(JSON.stringify(audited)).not.toContain('Clave-segura-1');
+      expect(JSON.stringify(audited)).not.toContain('no-debe-salir');
+    });
+
     it('sends the declared fields to the UI and requires them on create', async () => {
       const { headers } = await login('owner@tuapp.com');
       const me = await call('GET', '/auth/me', { headers });
-      expect(me.body.config).toEqual({
+      expect(me.body.config).toMatchObject({
         centralDomains: ['tuapp.com'],
         tenantFields: [
           { key: 'adminEmail', label: 'Email del administrador', type: 'email', required: true },

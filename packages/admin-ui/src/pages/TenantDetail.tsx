@@ -1,9 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { del, get, patch, post } from '../api';
 import { useAuth } from '../auth';
 import { DataEditor, dataFromRows, rowsFromData, type DataRow } from '../components/DataEditor';
+import { EnterTenant } from '../components/EnterTenant';
 import {
+  IconAlert,
+  IconChevronLeft,
+  IconDatabase,
+  IconExternal,
+  IconGlobe,
+  IconLogin,
+} from '../components/icons';
+import {
+  Avatar,
   Badge,
   Button,
   Card,
@@ -13,7 +23,10 @@ import {
   Input,
   Modal,
   PageHeader,
+  RelativeTime,
   Spinner,
+  StatusBadge,
+  StepBadge,
   Tabs,
   formatDate,
   useToast,
@@ -21,21 +34,33 @@ import {
 import { Link, navigate } from '../router';
 import type { TenantDetail as Detail } from '../types';
 import { DataExplorer } from './DataExplorer';
+import { TenantUsers } from './TenantUsers';
 import { ThemeEditor } from './ThemeEditor';
 
 export function TenantDetail({ id }: { id: string }) {
-  const { can } = useAuth();
+  const { can, session } = useAuth();
   const initialTab = new URLSearchParams(window.location.search).get('tab') ?? 'overview';
   const [tab, setTab] = useState(initialTab);
+  const [entering, setEntering] = useState(false);
   const detail = useQuery({
     queryKey: ['tenant', id],
     queryFn: () => get<Detail>(`/tenants/${encodeURIComponent(id)}`),
   });
-  if (detail.isLoading) return <Spinner />;
+  if (detail.isLoading)
+    return (
+      <div className="flex justify-center py-20">
+        <Spinner />
+      </div>
+    );
   if (detail.error) return <ErrorBox error={detail.error} />;
   const d = detail.data!;
+  const t = d.tenant;
+  const primary = d.domains.find((x) => x.isPrimary) ?? d.domains[0];
   const tabs: [string, string][] = [
     ['overview', 'Resumen'],
+    ...(session?.config?.tenantUsers !== undefined
+      ? ([['users', 'Usuarios']] as [string, string][])
+      : []),
     ['domains', 'Dominios'],
     ['theme', 'Tema'],
     ['database', 'Base de datos'],
@@ -44,26 +69,67 @@ export function TenantDetail({ id }: { id: string }) {
   ];
   return (
     <>
-      <p className="mb-2 text-sm">
-        <Link to="/tenants" className="text-muted hover:text-fg">
-          ← Tenants
-        </Link>
-      </p>
+      <Link
+        to="/tenants"
+        className="mb-4 inline-flex items-center gap-1 text-sm text-muted hover:text-fg"
+      >
+        <IconChevronLeft /> Tenants
+      </Link>
       <PageHeader
-        title={
-          <span>
-            {d.tenant.name} <Badge>{d.tenant.status}</Badge>
+        leading={
+          <Avatar
+            name={t.name}
+            color={String(d.effectiveTheme?.primary ?? '')}
+            src={d.logoUrl}
+            size="lg"
+          />
+        }
+        title={t.name}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <StatusBadge status={t.status} />
+            <span className="font-mono text-xs">{t.id}</span>
+            {primary && (
+              <a
+                href={`https://${primary.domain}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 hover:text-brand"
+              >
+                <IconGlobe /> {primary.domain}
+              </a>
+            )}
+            {t.plan && <Badge tone="info">{t.plan}</Badge>}
           </span>
         }
-        subtitle={<span className="font-mono">{d.tenant.id}</span>}
+        actions={
+          <>
+            {primary && (
+              <a
+                href={`https://${primary.domain}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-panel px-3.5 text-sm font-medium shadow-sm hover:bg-subtle"
+              >
+                <IconExternal /> Abrir sitio
+              </a>
+            )}
+            {can('impersonate') && t.status === 'active' && (
+              <Button variant="primary" icon={<IconLogin />} onClick={() => setEntering(true)}>
+                Entrar
+              </Button>
+            )}
+          </>
+        }
       />
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === 'overview' && <Overview detail={d} />}
+      {tab === 'users' && <TenantUsers tenantId={id} tenantActive={t.status === 'active'} />}
       {tab === 'domains' && <Domains detail={d} />}
       {tab === 'theme' && (
         <ThemeEditor
           tenantId={id}
-          effectiveTheme={d.effectiveTheme ?? d.tenant.theme ?? {}}
+          effectiveTheme={d.effectiveTheme ?? t.theme ?? {}}
           defaultTheme={d.defaultTheme ?? {}}
           logoUrl={d.logoUrl ?? null}
           previewDomain={d.previewDomain ?? null}
@@ -73,6 +139,7 @@ export function TenantDetail({ id }: { id: string }) {
       {tab === 'database' && <Database id={id} />}
       {tab === 'data' && <DataExplorer tenantId={id} />}
       {tab === 'errors' && <Errors detail={d} />}
+      <EnterTenant tenant={t} open={entering} onClose={() => setEntering(false)} />
     </>
   );
 }
@@ -102,6 +169,15 @@ function useTenantAction(id: string) {
   });
 }
 
+function Info({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted">{label}</dt>
+      <dd className="text-sm">{children}</dd>
+    </div>
+  );
+}
+
 function Overview({ detail }: { detail: Detail }) {
   const { can } = useAuth();
   const t = detail.tenant;
@@ -110,104 +186,107 @@ function Overview({ detail }: { detail: Detail }) {
   const [message, setMessage] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [typed, setTyped] = useState('');
-  const [impersonate, setImpersonate] = useState(false);
-  const [user, setUser] = useState('');
-  const [link, setLink] = useState<{ url: string | null; token: string; expiresAt: string } | null>(
-    null,
-  );
   const toast = useToast();
 
   const remove = useMutation({
     mutationFn: () => del(`/tenants/${encodeURIComponent(t.id)}`, { confirm: typed }),
     onSuccess: () => (toast(`Tenant ${t.id} eliminado`), navigate('/tenants')),
   });
-  const impersonation = useMutation({
-    mutationFn: () =>
-      post<{ url: string | null; token: string; expiresAt: string }>(
-        `/tenants/${encodeURIComponent(t.id)}/impersonate`,
-        { user },
-      ),
-    onSuccess: setLink,
-  });
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      <Card title="Datos" className="md:col-span-2">
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
-          <dt className="text-muted">Plan</dt>
-          <dd>{t.plan ?? '—'}</dd>
-          <dt className="text-muted">Base de datos</dt>
-          <dd className="font-mono text-xs">
-            {t.database
-              ? `${t.database.serverId} / ${t.database.name}${t.database.username ? ` (usuario ${t.database.username})` : ''}`
-              : '—'}
-          </dd>
-          <dt className="text-muted">Creado</dt>
-          <dd>{formatDate(t.createdAt)}</dd>
-          <dt className="text-muted">Aprovisionado</dt>
-          <dd>{formatDate(t.provisionedAt)}</dd>
-          {t.maintenanceMessage && (
-            <>
-              <dt className="text-muted">Mensaje</dt>
-              <dd>{t.maintenanceMessage}</dd>
-            </>
-          )}
-          <dt className="text-muted">Datos</dt>
-          <dd>
-            <TenantData id={t.id} data={t.data} canEdit={can('tenants:write')} />
-          </dd>
-        </dl>
-        <h3 className="mb-2 mt-4 text-sm font-semibold">Último aprovisionamiento</h3>
-        <DataTable
-          data={detail.provisioning}
-          empty="Sin registros"
-          columns={[
-            { header: 'Paso', cell: ({ row }) => row.original.step },
-            { header: 'Estado', cell: ({ row }) => <Badge>{row.original.status}</Badge> },
-            { header: 'Intento', cell: ({ row }) => row.original.attempt },
-            {
-              header: 'Duración',
-              cell: ({ row }) =>
-                row.original.durationMs != null ? `${row.original.durationMs} ms` : '—',
-            },
-            {
-              header: 'Error',
-              cell: ({ row }) => (
-                <span className="text-xs text-danger">{row.original.error ?? ''}</span>
-              ),
-            },
-          ]}
-        />
-      </Card>
-      <Card title="Acciones">
-        <div className="flex flex-col gap-2">
-          {can('tenants:write') && t.status === 'active' && (
-            <>
-              <Button onClick={() => action.mutate({ path: '/suspend' })}>Suspender</Button>
-              <Button onClick={() => setMaintenance(true)}>Poner en mantenimiento</Button>
-            </>
-          )}
-          {can('tenants:write') && (t.status === 'suspended' || t.status === 'maintenance') && (
-            <Button onClick={() => action.mutate({ path: '/activate' })}>Reactivar</Button>
-          )}
-          {can('tenants:write') && t.status === 'failed' && (
-            <Button variant="primary" onClick={() => action.mutate({ path: '/retry' })}>
-              Reintentar aprovisionamiento
-            </Button>
-          )}
-          {can('cache:flush') && (
-            <Button onClick={() => action.mutate({ path: '/cache/flush' })}>Vaciar caché</Button>
-          )}
-          {can('impersonate') && t.status === 'active' && (
-            <Button onClick={() => (setLink(null), setImpersonate(true))}>Entrar como…</Button>
-          )}
-          {can('tenants:delete') && (
-            <Button variant="danger" onClick={() => setConfirmDelete(true)}>
+    <div className="grid gap-6 lg:grid-cols-3">
+      <div className="space-y-6 lg:col-span-2">
+        {t.maintenanceMessage && t.status === 'maintenance' && (
+          <div className="flex gap-2.5 rounded-lg border border-warn/30 bg-warn/5 px-4 py-3 text-sm text-warn">
+            <IconAlert className="mt-0.5 shrink-0" />
+            <p>
+              En mantenimiento: <span className="text-fg">{t.maintenanceMessage}</span>
+            </p>
+          </div>
+        )}
+        <Card title="Información">
+          <dl className="grid gap-5 sm:grid-cols-2">
+            <Info label="Plan">{t.plan ?? '—'}</Info>
+            <Info label="Base de datos">
+              {t.database ? (
+                <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+                  <IconDatabase className="text-muted" />
+                  {t.database.serverId} / {t.database.name}
+                  {t.database.username ? ` · ${t.database.username}` : ''}
+                </span>
+              ) : (
+                '—'
+              )}
+            </Info>
+            <Info label="Creado">
+              <RelativeTime value={t.createdAt} />
+            </Info>
+            <Info label="Aprovisionado">
+              <RelativeTime value={t.provisionedAt} />
+            </Info>
+          </dl>
+        </Card>
+        <Card title="Datos" description="tenant.data: lo recibe el seed y la app.">
+          <TenantData id={t.id} data={t.data} canEdit={can('tenants:write')} />
+        </Card>
+        <Card title="Último aprovisionamiento" flush>
+          <DataTable
+            data={detail.provisioning}
+            empty="Sin registros"
+            columns={[
+              { header: 'Paso', cell: ({ row }) => row.original.step },
+              { header: 'Estado', cell: ({ row }) => <StepBadge status={row.original.status} /> },
+              { header: 'Intento', cell: ({ row }) => row.original.attempt },
+              {
+                header: 'Duración',
+                cell: ({ row }) =>
+                  row.original.durationMs != null ? `${row.original.durationMs} ms` : '—',
+              },
+              {
+                header: 'Error',
+                cell: ({ row }) => (
+                  <span className="text-xs text-danger">{row.original.error ?? ''}</span>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      </div>
+      <div className="space-y-6">
+        <Card title="Acciones">
+          <div className="flex flex-col gap-2">
+            {can('tenants:write') && t.status === 'active' && (
+              <>
+                <Button onClick={() => action.mutate({ path: '/suspend' })}>Suspender</Button>
+                <Button onClick={() => setMaintenance(true)}>Poner en mantenimiento</Button>
+              </>
+            )}
+            {can('tenants:write') && (t.status === 'suspended' || t.status === 'maintenance') && (
+              <Button variant="primary" onClick={() => action.mutate({ path: '/activate' })}>
+                Reactivar
+              </Button>
+            )}
+            {can('tenants:write') && t.status === 'failed' && (
+              <Button variant="primary" onClick={() => action.mutate({ path: '/retry' })}>
+                Reintentar aprovisionamiento
+              </Button>
+            )}
+            {can('cache:flush') && (
+              <Button onClick={() => action.mutate({ path: '/cache/flush' })}>Vaciar caché</Button>
+            )}
+          </div>
+        </Card>
+        {can('tenants:delete') && (
+          <Card title="Zona de peligro" className="border-danger/30">
+            <p className="mb-3 text-sm text-muted">
+              Borra la base, su usuario, sus dominios y sus archivos. No se puede deshacer.
+            </p>
+            <Button variant="danger" className="w-full" onClick={() => setConfirmDelete(true)}>
               Eliminar tenant
             </Button>
-          )}
-        </div>
-      </Card>
+          </Card>
+        )}
+      </div>
 
       <Modal title="Mantenimiento" open={maintenance} onClose={() => setMaintenance(false)}>
         <Field label="Mensaje para los usuarios">
@@ -220,7 +299,7 @@ function Overview({ detail }: { detail: Detail }) {
             />
           )}
         </Field>
-        <div className="mt-3 flex justify-end">
+        <div className="mt-4 flex justify-end">
           <Button
             variant="primary"
             onClick={() => (
@@ -238,7 +317,7 @@ function Overview({ detail }: { detail: Detail }) {
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
       >
-        <p className="mb-3 text-sm">
+        <p className="mb-4 text-sm">
           Se borran la base <span className="font-mono">{t.database?.name ?? '—'}</span>, su usuario
           y sus dominios. <strong>No se puede deshacer.</strong>
         </p>
@@ -246,7 +325,7 @@ function Overview({ detail }: { detail: Detail }) {
         <Field label={`Escribe "${t.id}" para confirmar`}>
           {(id) => <Input id={id} value={typed} onChange={(e) => setTyped(e.target.value)} />}
         </Field>
-        <div className="mt-3 flex justify-end">
+        <div className="mt-4 flex justify-end">
           <Button
             variant="danger"
             disabled={typed !== t.id}
@@ -256,48 +335,6 @@ function Overview({ detail }: { detail: Detail }) {
             Eliminar definitivamente
           </Button>
         </div>
-      </Modal>
-
-      <Modal
-        title="Entrar como un usuario"
-        open={impersonate}
-        onClose={() => setImpersonate(false)}
-      >
-        {link ? (
-          <div className="space-y-2 text-sm">
-            <p>Enlace de un solo uso, válido hasta {formatDate(link.expiresAt)}:</p>
-            {link.url ? (
-              <a
-                href={link.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="break-all font-mono text-xs text-brand underline"
-              >
-                {link.url}
-              </a>
-            ) : (
-              <p className="break-all font-mono text-xs">{link.token}</p>
-            )}
-            <p className="text-xs text-muted">La acción queda en la auditoría.</p>
-          </div>
-        ) : (
-          <>
-            <ErrorBox error={impersonation.error} />
-            <Field label="Usuario (id o email en la app del tenant)">
-              {(id) => <Input id={id} value={user} onChange={(e) => setUser(e.target.value)} />}
-            </Field>
-            <div className="mt-3 flex justify-end">
-              <Button
-                variant="primary"
-                disabled={!user}
-                busy={impersonation.isPending}
-                onClick={() => impersonation.mutate()}
-              >
-                Generar enlace
-              </Button>
-            </div>
-          </>
-        )}
       </Modal>
     </div>
   );

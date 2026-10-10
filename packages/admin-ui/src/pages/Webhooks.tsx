@@ -59,7 +59,7 @@ export function Webhooks() {
         }
       />
       <ErrorBox error={hooks.error ?? toggle.error ?? remove.error} />
-      <Card>
+      <Card flush>
         <DataTable
           data={hooks.data ?? []}
           empty={hooks.isLoading ? 'Cargando…' : 'Sin webhooks'}

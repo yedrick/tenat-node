@@ -1,5 +1,5 @@
 import type { IncomingMessage } from 'node:http';
-import type { Tenancy } from '@tenancy-node/core';
+import type { Tenancy, Tenant } from '@tenancy-node/core';
 import type { CentralAccess, DatabaseExtension } from '@tenancy-node/db';
 import type { OutboxApi } from '@tenancy-node/outbox';
 import type { WebhooksApi } from '@tenancy-node/transport-webhook';
@@ -22,6 +22,42 @@ export interface TenantField {
   required?: boolean;
   hint?: string;
   placeholder?: string;
+}
+
+/** Usuario de la app dentro de un tenant, tal como lo muestra el panel. */
+export interface TenantUser {
+  /** Lo que recibe "Entrar como" (`userIdentifier` en `consumeImpersonationToken`). */
+  id: string;
+  name: string;
+  email?: string | null;
+  role?: string | null;
+  /** `false` = desactivado (no se puede entrar como él). Por defecto `true`. */
+  active?: boolean;
+  lastLoginAt?: string | Date | null;
+}
+
+export interface NewTenantUser {
+  name: string;
+  email: string;
+  role?: string;
+  /** Contraseña inicial. Si falta, la app decide (por ejemplo, cuenta "por activar"). */
+  password?: string;
+}
+
+/**
+ * Cómo ve y crea el panel los usuarios de la app dentro de cada tenant. Las funciones corren en
+ * el contexto del tenant: `tenancy.db()`, `tenancy.pool()`... apuntan a su base.
+ * Para responder un error al panel (email repetido, contraseña débil) lanza `AdminHttpError`.
+ */
+export interface TenantUsersAdapter {
+  list(
+    query: { search?: string; page: number; perPage: number },
+    tenant: Tenant,
+  ): Promise<{ items: TenantUser[]; total: number }>;
+  /** Sin `create`, el panel solo lista. */
+  create?(input: NewTenantUser, tenant: Tenant): Promise<TenantUser>;
+  /** Roles para elegir al crear (por ejemplo `[{ value: 'ADMIN', label: 'Administrador' }]`). */
+  roles?: readonly { value: string; label: string }[];
 }
 
 export interface AdminOptions {
@@ -70,6 +106,8 @@ export interface AdminOptions {
    * administrador inicial, que después lee el `seed`). Además se pueden cargar datos libres.
    */
   tenantFields?: readonly TenantField[];
+  /** Usuarios de la app en cada tenant: el panel los lista, los crea y entra como ellos. */
+  tenantUsers?: TenantUsersAdapter;
   /** IP del cliente a mano (por ejemplo `req.ip` de Express). Tiene prioridad sobre `trustProxy`. */
   clientIp?: (req: IncomingMessage) => string | null | undefined;
 }
@@ -84,12 +122,19 @@ export interface AdminContext {
   options: Required<
     Omit<
       AdminOptions,
-      'impersonationUrl' | 'allowedHosts' | 'ui' | 'clientIp' | 'trustProxy' | 'tenantFields'
+      | 'impersonationUrl'
+      | 'allowedHosts'
+      | 'ui'
+      | 'clientIp'
+      | 'trustProxy'
+      | 'tenantFields'
+      | 'tenantUsers'
     >
   > & {
     impersonationUrl: AdminOptions['impersonationUrl'] | undefined;
     allowedHosts: readonly string[];
     tenantFields: readonly TenantField[];
+    tenantUsers: TenantUsersAdapter | undefined;
   };
   /** Registra una acción del usuario autenticado en la auditoría. */
   record(request: AdminRequest, input: Omit<AuditInput, 'adminUserId' | 'ip'>): Promise<void>;

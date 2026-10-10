@@ -50,7 +50,7 @@ export function Audit() {
         <Button type="submit">Filtrar</Button>
       </form>
       <ErrorBox error={audit.error} />
-      <Card>
+      <Card flush>
         <DataTable
           data={rows}
           empty={audit.isLoading ? 'Cargando…' : 'Sin registros'}

@@ -31,6 +31,22 @@ export function usePath(): string {
   return path;
 }
 
+/** Un parámetro de la URL (`?search=`); se actualiza con cada `navigate`. */
+export function useQueryParam(name: string): string | null {
+  const read = () => new URLSearchParams(window.location.search).get(name);
+  const [value, setValue] = useState(read);
+  useEffect(() => {
+    const update = () => setValue(read());
+    listeners.add(update);
+    window.addEventListener('popstate', update);
+    return () => {
+      listeners.delete(update);
+      window.removeEventListener('popstate', update);
+    };
+  }, [name]);
+  return value;
+}
+
 /** `/tenants/:id` contra `/tenants/bolivar` → `{ id: 'bolivar' }`, o `null`. */
 export function matchPath(pattern: string, path: string): Record<string, string> | null {
   const names: string[] = [];

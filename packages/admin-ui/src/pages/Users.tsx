@@ -48,7 +48,7 @@ export function Users() {
         }
       />
       <ErrorBox error={users.error ?? update.error ?? remove.error} />
-      <Card>
+      <Card flush>
         <DataTable
           data={users.data ?? []}
           columns={[
