@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/orm-knex",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Knex integration for tenancy-node: tenancy.knex() per tenant and a Knex migrator",
   "keywords": [
     "multi-tenancy",

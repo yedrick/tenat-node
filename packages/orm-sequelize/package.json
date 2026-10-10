@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/orm-sequelize",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Sequelize integration for tenancy-node (instance per tenant and Umzug migrator)",
   "keywords": [
     "multi-tenancy",
