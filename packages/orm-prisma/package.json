@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/orm-prisma",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Prisma integration for tenancy-node: tenancy.prisma() per tenant and a Prisma migrator",
   "keywords": [
     "multi-tenancy",

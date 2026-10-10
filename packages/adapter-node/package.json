@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/adapter-node",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "node:http integration for tenancy-node",
   "keywords": [
     "multi-tenancy",

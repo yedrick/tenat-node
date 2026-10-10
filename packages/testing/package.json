@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/testing",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Contract test suites, fakes and helpers to test code built on tenancy-node",
   "keywords": [
     "multi-tenancy",

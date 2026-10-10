@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/db-sqlite",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "SQLite driver for tenancy-node: one file per tenant (development, tests and small apps)",
   "keywords": [
     "multi-tenancy",

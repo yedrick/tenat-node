@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/storage-s3",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "S3-compatible storage (AWS, R2, Spaces, MinIO, SeaweedFS) for tenancy-node",
   "keywords": [
     "multi-tenancy",

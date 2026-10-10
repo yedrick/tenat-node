@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/transport-rabbitmq",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "RabbitMQ event transport and consumer for tenancy-node",
   "keywords": [
     "multi-tenancy",

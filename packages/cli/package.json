@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/cli",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Command line interface for tenancy-node: init, install, create, migrate, run...",
   "keywords": [
     "multi-tenancy",

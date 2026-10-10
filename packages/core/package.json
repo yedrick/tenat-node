@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/core",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Multi-tenancy core for Node.js: domain, use cases, ports and the tenancy facade",
   "keywords": [
     "multi-tenancy",

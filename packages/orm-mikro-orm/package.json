@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/orm-mikro-orm",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "MikroORM integration for tenancy-node (ORM per tenant, forked EntityManager and migrator)",
   "keywords": [
     "multi-tenancy",
