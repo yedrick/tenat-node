@@ -10,6 +10,8 @@ export type {
   CurrentTheme,
   EventsApi,
   EventListenerOptions,
+  FeaturesApi,
+  PlansApi,
   JobContext,
   JobHandler,
   JobsApi,
@@ -39,11 +41,29 @@ export * from './resolvers/resolvers.js';
 export { InProcessEventBus, type InProcessEventBusDeps } from './events/in-process-event-bus.js';
 export * from './events/cloudevents.js';
 export { InvalidEventDataError, type ForwardOptions } from './tenancy.js';
+// Avisos
+export type {
+  ForTenantOptions,
+  NotificationDelivery,
+  NotificationsApi,
+  RegisterDeviceInput,
+  TenantNotification,
+} from './notifications/notification-service.js';
+// Cobros
+export type {
+  BillingApi,
+  BillingRunResult,
+  InvoiceInput,
+  PayInput,
+  SubscribeInput,
+} from './billing/billing-service.js';
+export { InMemoryBillingRepository } from './infrastructure/memory/in-memory-billing-repository.js';
 // Caché
 export * from './cache/tenant-cache.js';
 // Infraestructura en memoria y decorators
 export { InMemoryTenantRepository } from './infrastructure/memory/in-memory-tenant-repository.js';
 export { InMemoryDomainRepository } from './infrastructure/memory/in-memory-domain-repository.js';
+export { InMemoryNotificationRepository } from './infrastructure/memory/in-memory-notification-repository.js';
 export {
   MemoryCacheStore,
   type MemoryCacheStoreOptions,

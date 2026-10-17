@@ -10,6 +10,7 @@ import {
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
+  type TextareaHTMLAttributes,
 } from 'react';
 import { ApiError } from '../api';
 import { IconAlert, IconCheck, IconCopy, IconX } from './icons';
@@ -123,6 +124,10 @@ const CONTROL =
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cx(CONTROL, 'h-9', props.className)} />;
+}
+
+export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea rows={4} {...props} className={cx(CONTROL, 'py-2', props.className)} />;
 }
 
 export function Select({

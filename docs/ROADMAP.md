@@ -138,3 +138,76 @@ Paquetes verificados como se publican: `pnpm pack`, publint, arethetypeswrong y 
 - [ ] Publicar en npm (0.8.0)
 
 > **Hito v1.0:** versión estable.
+
+## Fase 10 — Planes, módulos, avisos y cobros (v0.11) ✅
+
+Objetivo: que cualquier proyecto declare **sus** módulos y planes en la configuración y la librería
+haga cumplir todo lo demás (API, menú, límites, panel y precios públicos). La librería no conoce
+módulos concretos ("reportes", "caja"): los nombres los pone cada proyecto.
+
+### Lo que ya existía (0.10)
+
+- [x] Campo `plan` en cada tenant (texto libre), editable desde el panel y la CLI
+- [x] `/tenancy/me` puede mostrar `plan` con `publicFields`
+- [x] Tema por tenant y `/tenancy/theme.css` (la fuente era un nombre libre, sin carga)
+- [x] Invalidación de la caché de búsqueda entre instancias al guardar un tenant
+- [x] Panel con tenants, editor de tema, usuarios de cada tenant, auditoría y límite de intentos
+
+### Lo que se agregó
+
+**Núcleo (`@tenancy-node/core`)**
+
+- [x] Configuración `features` (catálogo de módulos) y `plans` (módulos, límites, precio, `public`), con `defaultPlan`
+- [x] El plan de un tenant se valida contra el catálogo; uno desconocido no rompe nada (sin módulos y aviso en el log)
+- [x] Módulos sueltos por tenant (`features: { add, remove, limits }`), guardados en la base central
+- [x] `tenancy.features`: `has`, `list`, `limit`, `assertLimit`, `require`, `of`
+- [x] `tenancy.plans`: `list`, `get`
+- [x] Errores `TENANCY_FEATURE_NOT_IN_PLAN` (403) y `TENANCY_PLAN_LIMIT_REACHED` (403), con detalles en la respuesta
+- [x] Evento `tenant.plan_changed`
+- [x] `/tenancy/me` con `features` y `limits`; ruta pública `GET /tenancy/plans`
+- [x] Tipografías: `theme.fonts` (Google, sistema o URL propia), validación y carga dentro de `theme.css`
+- [x] Nombres de módulo con autocompletado en TypeScript (declaration merging, opcional)
+
+**Base de datos (`@tenancy-node/db`)**
+
+- [x] Migración: columna `features` en `tenancy_tenants` y tabla `tenancy_leads`
+- [x] Repositorio de solicitudes (leads) y conteo de tenants por plan
+
+**Frameworks**
+
+- [x] `requireFeature()` en Express y Fastify; `tenancy.features.require()` para `node:http`
+
+**Panel (`admin-api` + `admin-ui`)**
+
+- [x] Plan del tenant: selector de plan, casillas de módulos sueltos y límites propios
+- [x] Página "Planes": módulos, precios y cuántos tenants tiene cada plan
+- [x] Página "Solicitudes": formulario público `POST /admin/api/leads` (campo trampa, límite por IP,
+      consentimiento), estados y botón "Crear tenant" con el plan elegido; evento `lead.created` para avisar por correo
+- [x] Tipografía: lista con vista previa de cada fuente; vista previa del tema
+- [x] Dashboard: tenants por plan y solicitudes nuevas
+
+**CLI**
+
+- [x] `tenancy plans` y `tenancy tenant:plan <id> <plan> [--add] [--remove]`
+
+**Avisos y push**
+
+- [x] `tenancy.notifications`: a todos, a algunos tenants o por plan; roles, vigencia, lecturas por usuario
+- [x] Dispositivos y canales de entrega; `@tenancy-node/notify-firebase` (FCM HTTP v1)
+- [x] Panel "Avisos" y `tenancy notify`
+
+**Cobros**
+
+- [x] `tenancy.billing`: suscripción, facturas, pagos manuales y parciales, ciclo de cobro con suspensión opcional
+- [x] Interfaz `PaymentProvider` para pasarelas (checkout + webhook idempotente)
+- [x] Panel "Cobros" y cobros en el detalle del tenant; `tenancy billing:run`
+
+**Calidad y publicación**
+
+Verificado con 556 pruebas del backend contra PostgreSQL 16, MySQL 8, MariaDB 11 y SQLite (contratos de los repositorios nuevos en los cuatro motores), 25 de la interfaz (dos en Chromium real) y Firebase contra un servidor que verifica la firma del JWT.
+
+- [x] Pruebas unitarias y de integración en MySQL, MariaDB y PostgreSQL
+- [x] Guía "Planes y módulos" con la conexión paso a paso (backend y frontend), ADR, CHANGELOG
+- [x] Publicar v0.11.0 (GitHub Release con los .tgz)
+
+Pendiente para la app (fuera de la librería): conectar una pasarela de pago real y un proyecto de Firebase real, y la web comercial (Fase 4 del plan de IONIX).

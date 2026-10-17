@@ -22,6 +22,7 @@ Multi-tenancy para Node.js inspirado en [stancl/tenancy](https://tenancyforlarav
 | `@tenancy-node/outbox`                                                                            | Outbox transaccional con relay `SKIP LOCKED`                                                                                           |
 | `@tenancy-node/transport-webhook / -rabbitmq / -redis-streams / -kafka / -nats`                   | Transportes de eventos (CloudEvents) y sus consumidores                                                                                |
 | `@tenancy-node/otel / prometheus`                                                                 | Trazas y métricas con `tenant.id`                                                                                                      |
+| `@tenancy-node/notify-firebase`                                                                    | Notificaciones push con Firebase Cloud Messaging para los avisos                                                                       |
 | `@tenancy-node/admin-api / admin-ui`                                                              | Panel de administración                                                                                                                |
 
 ## Instalación
@@ -169,6 +170,44 @@ await tenancy.webhooks.register({ tenant: 'bolivar', name: 'ERP', url: 'https://
 ```
 
 El receptor verifica la firma con `verifyWebhook({ secret, body, header })`. Ejemplo completo con un microservicio independiente en `examples/microservicio-emails`.
+
+## Planes y módulos
+
+Cada proyecto declara sus módulos y planes una vez; la librería lo hace cumplir en la API, `/tenancy/me` (menú del frontend), el panel, la CLI y los precios públicos:
+
+```ts
+const tenancy = createTenancy({
+  features: { agenda: 'Agenda', reportes: 'Reportes', finanzas: 'Finanzas' },
+  plans: {
+    basico: { label: 'Básico', price: { currency: 'BOB', monthly: 150 }, features: ['agenda'], limits: { usuarios: 3 } },
+    pro: { label: 'Profesional', features: '*', limits: { usuarios: null } },
+  },
+  defaultPlan: 'basico',
+  http: { me: true, plans: true },
+  publicFields: ['name', 'plan', 'features', 'limits'],
+});
+
+app.use('/api/reportes', requireFeature(tenancy, 'reportes'), reportes); // 403 si el plan no lo trae
+tenancy.features.assertLimit('usuarios', totalUsuarios); // 403 "allows 3 usuarios"
+await tenancy.plans.assign('bolivar', 'basico', { add: ['reportes'] }); // "Básico + Reportes"
+```
+
+Guía completa (frontend, web comercial con `GET /tenancy/plans`, solicitudes de demo y tipografías) en el [sitio](https://yedrick.github.io/tenat-node/guia/planes) y en [ADR 0016](docs/adr/0016-planes-y-modulos.md).
+
+## Avisos, push y cobros
+
+```ts
+// Avisos a todos, a algunos tenants o a un plan; push con Firebase (@tenancy-node/notify-firebase)
+await tenancy.notifications.send({ title: 'Mantenimiento el sábado', level: 'warning', audience: { type: 'plans', plans: ['pro'] } });
+const avisos = await tenancy.notifications.forTenant({ userId, roles }); // campanita de tu app
+
+// Cobros: suscripción, facturas y pagos (manual hoy, pasarela cuando quieras)
+await tenancy.billing.subscribe('bolivar'); // precio del plan, factura el primer mes
+await tenancy.billing.pay(facturaId, { method: 'transfer', reference: 'BNB-778812' });
+// cron diario: npx tenancy billing:run (factura, marca morosos y, si quieres, suspende)
+```
+
+Guías: [Avisos y push](https://yedrick.github.io/tenat-node/guia/avisos) · [Cobros](https://yedrick.github.io/tenat-node/guia/cobros) · [ADR 0017](docs/adr/0017-avisos-y-cobros.md).
 
 ## Panel de administración (API)
 

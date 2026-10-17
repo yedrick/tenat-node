@@ -4,6 +4,7 @@ import type { CentralAccess, DatabaseExtension } from '@tenancy-node/db';
 import type { OutboxApi } from '@tenancy-node/outbox';
 import type { WebhooksApi } from '@tenancy-node/transport-webhook';
 import type { AuditInput, AuditLog } from './audit.js';
+import type { Leads } from './leads.js';
 import type { RateLimiter } from './auth/rate-limit.js';
 import type { AdminSessions } from './auth/sessions.js';
 import type { AdminUsers } from './auth/users.js';
@@ -110,6 +111,21 @@ export interface AdminOptions {
   tenantUsers?: TenantUsersAdapter;
   /** IP del cliente a mano (por ejemplo `req.ip` de Express). Tiene prioridad sobre `trustProxy`. */
   clientIp?: (req: IncomingMessage) => string | null | undefined;
+  /**
+   * Formulario público "Solicitar demo" de la web comercial: `POST <prefix>/leads` sin sesión.
+   * Por defecto apagado (el panel igual lista y gestiona las solicitudes que crees con
+   * `admin.leads.create()`). Cada solicitud publica el evento `lead.created`.
+   */
+  leads?: boolean | LeadsOptions;
+}
+
+export interface LeadsOptions {
+  /** Envíos por IP. Por defecto 5 por hora. */
+  rateLimit?: { max: number; windowMs: number };
+  /** Exigir la casilla de consentimiento (`consent: true`). Por defecto `true`. */
+  requireConsent?: boolean;
+  /** Llaves extra aceptadas en `data` (máx. 20, valores de texto). Por defecto ninguna. */
+  extraFields?: readonly string[];
 }
 
 export interface AdminContext {
@@ -119,6 +135,7 @@ export interface AdminContext {
   sessions: AdminSessions;
   audit: AuditLog;
   limiter: RateLimiter;
+  leads: Leads;
   options: Required<
     Omit<
       AdminOptions,
@@ -129,8 +146,10 @@ export interface AdminContext {
       | 'trustProxy'
       | 'tenantFields'
       | 'tenantUsers'
+      | 'leads'
     >
   > & {
+    leads: Required<LeadsOptions> | null;
     impersonationUrl: AdminOptions['impersonationUrl'] | undefined;
     allowedHosts: readonly string[];
     tenantFields: readonly TenantField[];

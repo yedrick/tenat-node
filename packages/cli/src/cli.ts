@@ -24,6 +24,8 @@ import {
 } from './commands/database.js';
 import { initCommand } from './commands/init.js';
 import { createCommand, deleteCommand, installCommand, listCommand } from './commands/tenants.js';
+import { plansCommand, tenantPlanCommand } from './commands/plans.js';
+import { billingRunCommand, notifyCommand } from './commands/platform.js';
 import { schemaCommand, workerCommand } from './commands/runtime.js';
 import { outboxRelayCommand, outboxRetryCommand, outboxStatusCommand } from './commands/events.js';
 import { adminServeCommand, adminUserCommand } from './commands/admin.js';
@@ -38,6 +40,10 @@ export const COMMANDS: readonly Command[] = [
   createCommand,
   listCommand,
   deleteCommand,
+  plansCommand,
+  tenantPlanCommand,
+  notifyCommand,
+  billingRunCommand,
   migrateCommand,
   migrateStatusCommand,
   rollbackCommand,

@@ -7,3 +7,5 @@ export * from './contracts/event-bus.contract.js';
 export * from './contracts/storage-driver.contract.js';
 export * from './contracts/queue-driver.contract.js';
 export * from './memory-transport.js';
+export * from './contracts/notification-repository.contract.js';
+export * from './contracts/billing-repository.contract.js';

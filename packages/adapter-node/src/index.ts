@@ -76,8 +76,8 @@ export function withTenancy(
       res.end(typeof response.body === 'string' ? response.body : Buffer.from(response.body));
       return true;
     };
-    // /tenancy/health responde en cualquier host, antes de identificar al tenant.
-    if (tenancy.http.isHealth(req.method ?? 'GET', request.path ?? '/')) {
+    // /tenancy/health y /tenancy/plans responden en cualquier host, antes de identificar al tenant.
+    if (tenancy.http.isPublic(req.method ?? 'GET', request.path ?? '/')) {
       route().catch((error: unknown) => fail(error, true));
       return;
     }

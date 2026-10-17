@@ -33,6 +33,8 @@ import {
 } from '../components/ui';
 import { Link, navigate } from '../router';
 import type { TenantDetail as Detail } from '../types';
+import { PlanEditor } from './PlanEditor';
+import { TenantBilling } from './TenantBilling';
 import { DataExplorer } from './DataExplorer';
 import { TenantUsers } from './TenantUsers';
 import { ThemeEditor } from './ThemeEditor';
@@ -63,6 +65,7 @@ export function TenantDetail({ id }: { id: string }) {
       : []),
     ['domains', 'Dominios'],
     ['theme', 'Tema'],
+    ...(can('billing:read') ? ([['billing', 'Cobros']] as [string, string][]) : []),
     ['database', 'Base de datos'],
     ...(can('data:read') ? ([['data', 'Datos']] as [string, string][]) : []),
     ['errors', `Errores (${d.errors.length})`],
@@ -99,7 +102,11 @@ export function TenantDetail({ id }: { id: string }) {
                 <IconGlobe /> {primary.domain}
               </a>
             )}
-            {t.plan && <Badge tone="info">{t.plan}</Badge>}
+            {d.plan?.enabled && d.plan.planLabel ? (
+              <Badge tone="info">{d.plan.planLabel}</Badge>
+            ) : (
+              t.plan && <Badge tone="info">{t.plan}</Badge>
+            )}
           </span>
         }
         actions={
@@ -134,8 +141,10 @@ export function TenantDetail({ id }: { id: string }) {
           logoUrl={d.logoUrl ?? null}
           previewDomain={d.previewDomain ?? null}
           canEdit={can('tenants:write')}
+          fonts={d.fonts ?? []}
         />
       )}
+      {tab === 'billing' && can('billing:read') && <TenantBilling tenantId={id} plan={t.plan} />}
       {tab === 'database' && <Database id={id} />}
       {tab === 'data' && <DataExplorer tenantId={id} />}
       {tab === 'errors' && <Errors detail={d} />}
@@ -206,7 +215,12 @@ function Overview({ detail }: { detail: Detail }) {
         )}
         <Card title="Información">
           <dl className="grid gap-5 sm:grid-cols-2">
-            <Info label="Plan">{t.plan ?? '—'}</Info>
+            <Info label="Plan">
+              {detail.plan?.enabled
+                ? (detail.plan.planLabel ?? detail.plan.plan ?? 'Sin plan') +
+                  (t.plan === null && detail.plan.plan ? ' (por defecto)' : '')
+                : (t.plan ?? '—')}
+            </Info>
             <Info label="Base de datos">
               {t.database ? (
                 <span className="inline-flex items-center gap-1.5 font-mono text-xs">
@@ -226,6 +240,7 @@ function Overview({ detail }: { detail: Detail }) {
             </Info>
           </dl>
         </Card>
+        {detail.plan?.enabled && <PlanEditor detail={detail} canEdit={can('tenants:write')} />}
         <Card title="Datos" description="tenant.data: lo recibe el seed y la app.">
           <TenantData id={t.id} data={t.data} canEdit={can('tenants:write')} />
         </Card>

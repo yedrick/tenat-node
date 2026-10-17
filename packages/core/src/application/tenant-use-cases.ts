@@ -1,6 +1,8 @@
 import {
   DomainAlreadyTakenError,
   DomainName,
+  FontCatalog,
+  PlanCatalog,
   Tenant,
   TenantAlreadyExistsError,
   TenancyEvents,
@@ -9,6 +11,7 @@ import {
   Theme,
   type TenantChanges,
   type TenantData,
+  type TenantFeatureOverrides,
   type ThemePatch,
   type ThemeProps,
 } from '../domain/index.js';
@@ -29,6 +32,8 @@ export interface CreateTenantInput {
   /** Por defecto, el mismo id. */
   name?: string;
   plan?: string | null;
+  /** Módulos sueltos y límites propios sobre el plan. */
+  features?: TenantFeatureOverrides | null;
   data?: TenantData;
   /** Se combina con el tema por defecto de la configuración. */
   theme?: ThemePatch;
@@ -45,10 +50,15 @@ export class CreateTenantUseCase {
     private readonly events: EventBus,
     private readonly clock: Clock,
     private readonly themeDefaults: ThemeProps,
+    private readonly catalog: PlanCatalog = new PlanCatalog(),
+    private readonly fonts: FontCatalog = new FontCatalog(),
   ) {}
 
   async execute(input: CreateTenantInput): Promise<Tenant> {
     const id = TenantId.create(input.id);
+    this.catalog.validatePlan(input.plan);
+    if (input.theme?.font) this.fonts.validate(input.theme.font);
+    const features = this.catalog.normalizeOverrides(input.features);
     const domainNames = normalizeDomainList(input.domain);
 
     if (await this.tenants.exists(id)) throw new TenantAlreadyExistsError(id.value);
@@ -61,6 +71,7 @@ export class CreateTenantUseCase {
       id,
       name: input.name ?? id.value,
       plan: input.plan ?? null,
+      features,
       data: input.data ?? {},
       theme: input.theme ? Theme.create(this.themeDefaults).merge(input.theme) : null,
       now,
@@ -158,14 +169,30 @@ export class UpdateTenantUseCase {
     private readonly tenants: TenantRepository,
     private readonly events: EventBus,
     private readonly clock: Clock,
+    private readonly catalog: PlanCatalog = new PlanCatalog(),
   ) {}
 
   async execute(ref: TenantRef, changes: TenantChanges): Promise<Tenant> {
+    if (changes.plan !== undefined) this.catalog.validatePlan(changes.plan);
+    const normalized: TenantChanges =
+      changes.features === undefined
+        ? changes
+        : { ...changes, features: this.catalog.normalizeOverrides(changes.features) };
     const tenant = await requireTenant(this.tenants, ref);
-    const changed = tenant.update(changes, this.clock.now());
+    const previousPlan = tenant.plan;
+    const changed = tenant.update(normalized, this.clock.now());
     if (changed.length > 0) {
       await this.tenants.save(tenant);
       await this.events.publish(TenancyEvents.tenantUpdated(tenant, changed));
+      if (changed.includes('plan') || changed.includes('features')) {
+        await this.events.publish(
+          TenancyEvents.planChanged(
+            tenant,
+            previousPlan,
+            this.catalog.resolve(tenant.plan, tenant.features),
+          ),
+        );
+      }
     }
     return tenant;
   }

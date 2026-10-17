@@ -195,22 +195,25 @@ export const listCommand: Command = {
   name: 'list',
   summary: 'Lista los tenants',
   usage:
-    'tenancy list [--status=active,suspended] [--search=texto] [--page=1] [--per-page=50] [--deleted]',
+    'tenancy list [--status=active,suspended] [--plan=pro] [--search=texto] [--page=1] [--per-page=50] [--deleted]',
   options: {
     status: { type: 'string' },
+    plan: { type: 'string' },
     search: { type: 'string' },
     page: { type: 'string' },
     'per-page': { type: 'string' },
     deleted: { type: 'boolean' },
   },
-  help: { deleted: 'Incluir tenants eliminados' },
+  help: { deleted: 'Incluir tenants eliminados', plan: 'Solo los de este plan (vacío = sin plan)' },
   async run({ args, out, tenancy }) {
     const statuses = listOption(args, 'status');
     for (const s of statuses ?? [])
       if (!isTenantStatus(s)) throw new UsageError(`Unknown status "${s}"`);
     const search = stringOption(args, 'search');
+    const plan = stringOption(args, 'plan');
     const t = await tenancy();
     const page = await t.tenants.list({
+      ...(plan !== undefined ? { plan: plan === '' ? null : plan } : {}),
       page: intOption(args, 'page', 1),
       perPage: intOption(args, 'per-page', 50),
       ...(statuses ? { status: statuses as TenantStatus[] } : {}),

@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/cache-memcached",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Memcached cache store for tenancy-node (versioned namespaces per tenant)",
   "keywords": [
     "multi-tenancy",

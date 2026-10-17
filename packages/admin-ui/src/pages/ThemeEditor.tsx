@@ -1,7 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type CSSProperties } from 'react';
 import { del, put, upload } from '../api';
-import { Button, Card, ErrorBox, Field, Input, Select, useToast } from '../components/ui';
+import { Button, Card, ErrorBox, Field, Input, Select, cx, useToast } from '../components/ui';
+import { useFontStylesheets } from '../plans';
+import type { FontInfo } from '../types';
 
 type Theme = Record<string, unknown>;
 const COLORS: [string, string][] = [
@@ -14,13 +16,16 @@ const COLORS: [string, string][] = [
 const RADIUS: Record<string, string> = { none: '0', sm: '0.25rem', md: '0.5rem', lg: '1rem' };
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 
-/** Mismas variables CSS que genera `/tenancy/theme.css`. */
-export function themeVariables(theme: Theme): CSSProperties {
+/** Mismas variables CSS que genera `/tenancy/theme.css` (con la pila de respaldo de `theme.fonts`). */
+export function themeVariables(theme: Theme, fonts: readonly FontInfo[] = []): CSSProperties {
   const vars: Record<string, string> = {};
   for (const [key] of COLORS)
     if (typeof theme[key] === 'string' && HEX.test(theme[key] as string))
       vars[`--color-${key}`] = theme[key] as string;
-  if (theme.font) vars['--font-main'] = `'${String(theme.font)}', system-ui, sans-serif`;
+  if (theme.font)
+    vars['--font-main'] =
+      fonts.find((f) => f.family === theme.font)?.stack ??
+      `'${String(theme.font)}', system-ui, sans-serif`;
   if (theme.radius) vars['--radius'] = RADIUS[String(theme.radius)] ?? '0.5rem';
   return vars as CSSProperties;
 }
@@ -35,6 +40,7 @@ export function ThemeEditor({
   logoUrl,
   previewDomain,
   canEdit,
+  fonts = [],
 }: {
   tenantId: string;
   /** Lo que ve el tenant: su tema o `theme.defaults` de la app. */
@@ -43,6 +49,8 @@ export function ThemeEditor({
   logoUrl: string | null;
   previewDomain: string | null;
   canEdit: boolean;
+  /** Fuentes permitidas (`theme.fonts`). Vacío = se escribe cualquier nombre. */
+  fonts?: readonly FontInfo[];
 }) {
   const client = useQueryClient();
   const toast = useToast();
@@ -85,7 +93,8 @@ export function ThemeEditor({
     },
   });
   const set = (key: string, value: string) => setDraft((d) => ({ ...d, [key]: value }));
-  const vars = themeVariables(draft);
+  const vars = themeVariables(draft, fonts);
+  useFontStylesheets(fonts);
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -122,16 +131,24 @@ export function ThemeEditor({
               )}
             </Field>
           ))}
-          <Field label="Tipografía">
-            {(id) => (
-              <Input
-                id={id}
-                value={String(draft.font ?? '')}
-                placeholder="Inter"
-                onChange={(e) => set('font', e.target.value)}
-              />
-            )}
-          </Field>
+          {fonts.length > 0 ? (
+            <FontPicker
+              fonts={fonts}
+              value={String(draft.font ?? '')}
+              onChange={(family) => set('font', family)}
+            />
+          ) : (
+            <Field label="Tipografía">
+              {(id) => (
+                <Input
+                  id={id}
+                  value={String(draft.font ?? '')}
+                  placeholder="Inter"
+                  onChange={(e) => set('font', e.target.value)}
+                />
+              )}
+            </Field>
+          )}
           <Field label="Bordes">
             {(id) => (
               <Select
@@ -189,60 +206,178 @@ export function ThemeEditor({
           )}
         </fieldset>
       </Card>
-      <Card title="Vista previa">
-        <div
-          data-testid="theme-preview"
-          style={{
-            ...vars,
-            background: 'var(--color-background, #fff)',
-            color: 'var(--color-text, #111)',
-            fontFamily: 'var(--font-main, system-ui)',
-            borderRadius: 'var(--radius, 0.5rem)',
-          }}
-          className="space-y-3 border border-line p-4"
-        >
-          <div className="flex items-center gap-2">
-            {/* La URL solo se conoce para el logo guardado; uno escrito a mano se ve al guardar. */}
-            {logo.url && draft.logo === logo.path && (
-              <img src={logo.url} alt="Logo" className="h-8 w-auto" data-testid="preview-logo" />
+      <Card title="Vista previa" description="Así se ve la página del tenant con este tema.">
+        <ThemePreview
+          vars={vars}
+          draft={draft}
+          title={previewDomain ?? tenantId}
+          logoUrl={logo.url && draft.logo === logo.path ? logo.url : null}
+        />
+      </Card>
+    </div>
+  );
+}
+
+/** Lista de fuentes permitidas, cada una escrita en su propia fuente. */
+function FontPicker({
+  fonts,
+  value,
+  onChange,
+}: {
+  fonts: readonly FontInfo[];
+  value: string;
+  onChange: (family: string) => void;
+}) {
+  const options: { family: string; label: string; stack: string }[] = [
+    { family: '', label: 'Por defecto', stack: 'system-ui, sans-serif' },
+    ...fonts.map((f) => ({ family: f.family, label: f.label, stack: f.stack })),
+  ];
+  return (
+    <div className="space-y-1.5">
+      <p id="font-picker-label" className="text-sm font-medium">
+        Tipografía
+      </p>
+      <div
+        role="radiogroup"
+        aria-labelledby="font-picker-label"
+        className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto"
+      >
+        {options.map((f) => (
+          <button
+            key={f.family || 'default'}
+            type="button"
+            role="radio"
+            aria-checked={value === f.family}
+            aria-label={f.label}
+            onClick={() => onChange(f.family)}
+            style={{ fontFamily: f.stack }}
+            className={cx(
+              'rounded-lg border px-3 py-2 text-left transition-colors',
+              value === f.family
+                ? 'border-brand bg-brand/5 ring-2 ring-brand/20'
+                : 'border-line hover:bg-subtle',
             )}
-            <p className="text-lg font-semibold" style={{ color: 'var(--color-primary)' }}>
-              {previewDomain ?? tenantId}
-            </p>
-          </div>
-          <p className="text-sm">Así se ve la tienda de este tenant con su tema.</p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              data-testid="preview-primary"
-              style={{
-                background: 'var(--color-primary)',
-                color: '#fff',
-                borderRadius: 'var(--radius, 0.5rem)',
-              }}
-              className="px-3 py-1.5 text-sm"
+          >
+            <span className="block text-lg leading-tight">Aa Bb 123</span>
+            <span className="block truncate text-xs text-muted">{f.label}</span>
+          </button>
+        ))}
+      </div>
+      {value !== '' && !fonts.some((f) => f.family === value) && (
+        <p className="text-xs text-warn">
+          "{value}" no está en la lista de fuentes permitidas: elige otra para poder guardar.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Mini página del tenant: cabecera, portada, botones, tarjeta y acento con su tema. */
+function ThemePreview({
+  vars,
+  draft,
+  title,
+  logoUrl,
+}: {
+  vars: CSSProperties;
+  draft: Theme;
+  title: string;
+  logoUrl: string | null;
+}) {
+  const radius = 'var(--radius, 0.5rem)';
+  const hasAccent = typeof draft.accent === 'string' && HEX.test(draft.accent);
+  return (
+    <div
+      data-testid="theme-preview"
+      style={{
+        ...vars,
+        background: 'var(--color-background, #fff)',
+        color: 'var(--color-text, #111)',
+        fontFamily: 'var(--font-main, system-ui)',
+        borderRadius: radius,
+      }}
+      className="overflow-hidden border border-line"
+    >
+      <div
+        className="flex items-center justify-between gap-2 px-4 py-2.5"
+        style={{ background: 'var(--color-primary)', color: '#fff' }}
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          {/* La URL solo se conoce para el logo guardado; uno escrito a mano se ve al guardar. */}
+          {logoUrl && (
+            <img
+              src={logoUrl}
+              alt="Logo"
+              className="h-7 w-auto rounded bg-white/90 p-0.5"
+              data-testid="preview-logo"
+            />
+          )}
+          <p className="truncate text-sm font-semibold">{title}</p>
+        </div>
+        <span className="hidden gap-3 text-xs opacity-90 sm:flex">
+          <span>Inicio</span>
+          <span>Servicios</span>
+          <span>Contacto</span>
+        </span>
+      </div>
+      <div className="space-y-3 p-4">
+        <p
+          className="text-xl font-semibold leading-tight"
+          style={{ color: 'var(--color-primary)' }}
+        >
+          Bienvenido
+        </p>
+        <p className="text-sm opacity-80">
+          Así se ven los textos, los botones y las tarjetas con el tema de este tenant.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            data-testid="preview-primary"
+            style={{ background: 'var(--color-primary)', color: '#fff', borderRadius: radius }}
+            className="px-3 py-1.5 text-sm font-medium"
+          >
+            Reservar
+          </button>
+          <button
+            type="button"
+            style={{
+              background: 'var(--color-secondary)',
+              color: '#fff',
+              borderRadius: radius,
+            }}
+            className="px-3 py-1.5 text-sm font-medium"
+          >
+            Ver más
+          </button>
+          <button
+            type="button"
+            style={{
+              border: '1px solid var(--color-primary)',
+              color: 'var(--color-primary)',
+              borderRadius: radius,
+            }}
+            className="bg-transparent px-3 py-1.5 text-sm font-medium"
+          >
+            Contacto
+          </button>
+        </div>
+        <div
+          style={{ borderRadius: radius, borderColor: 'var(--color-secondary)' }}
+          className="border border-dashed p-3 text-sm"
+        >
+          <p className="font-semibold">Tarjeta de ejemplo</p>
+          <p className="opacity-75">Bordes, separación y tipografía del tema.</p>
+          {hasAccent && (
+            <span
+              className="mt-2 inline-block px-2 py-0.5 text-xs font-medium text-white"
+              style={{ background: 'var(--color-accent)', borderRadius: radius }}
             >
-              Comprar
-            </button>
-            <button
-              type="button"
-              style={{
-                background: 'var(--color-secondary)',
-                color: '#fff',
-                borderRadius: 'var(--radius, 0.5rem)',
-              }}
-              className="px-3 py-1.5 text-sm"
-            >
-              Ver más
-            </button>
-          </div>
-          {typeof draft.accent === 'string' && HEX.test(draft.accent) && (
-            <p className="text-sm" style={{ color: 'var(--color-accent)' }}>
               Oferta especial
-            </p>
+            </span>
           )}
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

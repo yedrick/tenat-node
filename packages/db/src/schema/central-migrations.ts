@@ -437,9 +437,179 @@ export function centralMigrations(prefix: string, kind: DialectKind): Record<str
     await scoped(db).schema.alterTable('event_outbox').dropColumn('destination').execute();
   };
 
+  // 0.11: módulos sueltos de cada tenant, solicitudes de la web comercial y avisos.
+  const plansUp = async (db: Db): Promise<void> => {
+    await scoped(db).schema.alterTable('tenants').addColumn('features', d.json).execute();
+
+    let leads = table(db, 'leads')
+      .addColumn('id', d.bigint, id)
+      .addColumn('name', 'varchar(150)', (c) => c.notNull())
+      .addColumn('company', 'varchar(150)')
+      .addColumn('city', 'varchar(100)')
+      .addColumn('phone', 'varchar(50)')
+      .addColumn('email', 'varchar(191)')
+      .addColumn('plan', 'varchar(50)')
+      .addColumn('message', 'text')
+      .addColumn('data', d.json)
+      .addColumn('status', 'varchar(20)', (c) => c.notNull().defaultTo('new'))
+      .addColumn('notes', 'text')
+      // Sin FK a propósito: la solicitud sobrevive al borrado del tenant.
+      .addColumn('tenant_id', 'varchar(40)')
+      .addColumn('ip', 'varchar(45)')
+      .addColumn('consent_at', d.ts);
+    leads = check(timestamps(leads), 'chk_leads_status', 'status', [
+      'new',
+      'contacted',
+      'converted',
+      'discarded',
+    ]);
+    await leads.execute();
+    await index(db, 'idx_leads_status', 'leads', ['status', 'created_at']);
+    await index(db, 'idx_leads_created', 'leads', ['created_at']);
+
+    // Avisos de la plataforma a sus tenants.
+    let notifications = table(db, 'notifications')
+      .addColumn('id', 'char(26)', (c) => c.primaryKey())
+      .addColumn('title', 'varchar(150)', (c) => c.notNull())
+      .addColumn('body', 'text', (c) => c.notNull())
+      .addColumn('level', 'varchar(20)', (c) => c.notNull().defaultTo('info'))
+      .addColumn('audience_type', 'varchar(20)', (c) => c.notNull())
+      .addColumn('audience_values', d.json)
+      .addColumn('roles', d.json)
+      .addColumn('link_url', 'varchar(2000)')
+      .addColumn('link_label', 'varchar(60)')
+      .addColumn('starts_at', d.ts)
+      .addColumn('expires_at', d.ts)
+      .addColumn('created_by', 'varchar(191)');
+    notifications = check(createdAt(notifications), 'chk_notifications_level', 'level', [
+      'info',
+      'success',
+      'warning',
+      'critical',
+    ]);
+    notifications = check(notifications, 'chk_notifications_audience', 'audience_type', [
+      'all',
+      'tenants',
+      'plans',
+    ]);
+    await notifications.execute();
+    await index(db, 'idx_notifications_created', 'notifications', ['created_at']);
+    await index(db, 'idx_notifications_expires', 'notifications', ['expires_at']);
+
+    // Sin FK al tenant a propósito (como la auditoría); sí al aviso, para borrarlas con él.
+    await table(db, 'notification_reads')
+      .addColumn('notification_id', 'char(26)', (c) => c.notNull())
+      .addColumn('tenant_id', 'varchar(40)', (c) => c.notNull())
+      .addColumn('user_id', 'varchar(191)', (c) => c.notNull())
+      .addColumn('read_at', d.ts, (c) => c.notNull())
+      .addPrimaryKeyConstraint(n('pk_notification_reads'), ['notification_id', 'tenant_id', 'user_id'])
+      .addForeignKeyConstraint(
+        n('fk_reads_notification'),
+        ['notification_id'],
+        'notifications',
+        ['id'],
+        (c) => c.onDelete('cascade'),
+      )
+      .execute();
+
+    await createdAt(
+      table(db, 'notification_devices')
+        .addColumn('token', 'varchar(512)', (c) => c.primaryKey())
+        .addColumn('tenant_id', 'varchar(40)', (c) => c.notNull())
+        .addColumn('user_id', 'varchar(191)', (c) => c.notNull())
+        .addColumn('platform', 'varchar(10)', (c) => c.notNull())
+        .addColumn('roles', d.json)
+        .addColumn('last_seen_at', d.ts, (c) => c.notNull()),
+    ).execute();
+    await index(db, 'idx_devices_tenant_user', 'notification_devices', ['tenant_id', 'user_id']);
+  };
+  const plansDown = async (db: Db): Promise<void> => {
+    await scoped(db).schema.dropTable('notification_devices').ifExists().execute();
+    await scoped(db).schema.dropTable('notification_reads').ifExists().execute();
+    await scoped(db).schema.dropTable('notifications').ifExists().execute();
+    await scoped(db).schema.dropTable('leads').ifExists().execute();
+    await scoped(db).schema.alterTable('tenants').dropColumn('features').execute();
+  };
+
+  // 0.11: cobros a los tenants (suscripción, facturas y pagos). Montos en centavos.
+  const billingUp = async (db: Db): Promise<void> => {
+    let subscriptions = table(db, 'billing_subscriptions')
+      .addColumn('tenant_id', 'varchar(40)', (c) => c.primaryKey())
+      .addColumn('plan', 'varchar(50)')
+      .addColumn('period', 'varchar(10)', (c) => c.notNull())
+      .addColumn('status', 'varchar(20)', (c) => c.notNull())
+      .addColumn('currency', 'char(3)', (c) => c.notNull())
+      .addColumn('amount_cents', d.bigint, (c) => c.notNull())
+      .addColumn('current_period_start', d.ts, (c) => c.notNull())
+      .addColumn('current_period_end', d.ts, (c) => c.notNull())
+      .addColumn('provider', 'varchar(30)', (c) => c.notNull())
+      .addColumn('provider_ref', 'varchar(191)')
+      .addColumn('canceled_at', d.ts);
+    subscriptions = check(timestamps(subscriptions), 'chk_subscriptions_status', 'status', [
+      'trialing',
+      'active',
+      'past_due',
+      'canceled',
+    ]);
+    await subscriptions.execute();
+    await index(db, 'idx_subscriptions_end', 'billing_subscriptions', ['status', 'current_period_end']);
+
+    let invoices = table(db, 'billing_invoices')
+      .addColumn('id', 'char(26)', (c) => c.primaryKey())
+      .addColumn('tenant_id', 'varchar(40)', (c) => c.notNull())
+      .addColumn('description', 'varchar(255)', (c) => c.notNull())
+      .addColumn('currency', 'char(3)', (c) => c.notNull())
+      .addColumn('amount_cents', d.bigint, (c) => c.notNull())
+      .addColumn('paid_cents', d.bigint, (c) => c.notNull().defaultTo(0))
+      .addColumn('status', 'varchar(10)', (c) => c.notNull())
+      .addColumn('period_start', d.ts)
+      .addColumn('period_end', d.ts)
+      .addColumn('due_at', d.ts, (c) => c.notNull())
+      .addColumn('paid_at', d.ts)
+      .addColumn('provider', 'varchar(30)')
+      .addColumn('provider_ref', 'varchar(191)')
+      .addColumn('checkout_url', 'varchar(2000)');
+    invoices = check(timestamps(invoices), 'chk_invoices_status', 'status', ['open', 'paid', 'void']);
+    await invoices.execute();
+    await index(db, 'idx_invoices_tenant', 'billing_invoices', ['tenant_id', 'created_at']);
+    await index(db, 'idx_invoices_due', 'billing_invoices', ['status', 'due_at']);
+    await index(db, 'idx_invoices_provider', 'billing_invoices', ['provider', 'provider_ref']);
+
+    await createdAt(
+      table(db, 'billing_payments')
+        .addColumn('id', 'char(26)', (c) => c.primaryKey())
+        .addColumn('invoice_id', 'char(26)', (c) => c.notNull())
+        .addColumn('tenant_id', 'varchar(40)', (c) => c.notNull())
+        .addColumn('amount_cents', d.bigint, (c) => c.notNull())
+        .addColumn('currency', 'char(3)', (c) => c.notNull())
+        .addColumn('method', 'varchar(30)', (c) => c.notNull())
+        .addColumn('reference', 'varchar(191)')
+        .addColumn('provider', 'varchar(30)', (c) => c.notNull())
+        .addColumn('provider_ref', 'varchar(191)')
+        .addColumn('paid_at', d.ts, (c) => c.notNull())
+        .addColumn('recorded_by', 'varchar(191)'),
+    )
+      .addForeignKeyConstraint(
+        n('fk_payments_invoice'),
+        ['invoice_id'],
+        'billing_invoices',
+        ['id'],
+        (c) => c.onDelete('restrict'),
+      )
+      .execute();
+    await index(db, 'idx_payments_invoice', 'billing_payments', ['invoice_id']);
+    await index(db, 'idx_payments_tenant', 'billing_payments', ['tenant_id', 'paid_at']);
+  };
+  const billingDown = async (db: Db): Promise<void> => {
+    for (const name of ['billing_payments', 'billing_invoices', 'billing_subscriptions'])
+      await scoped(db).schema.dropTable(name).ifExists().execute();
+  };
+
   return {
     '2026_09_25_000001_create_tenancy_tables': { up, down },
     '2026_09_26_000001_outbox_destinations': { up: eventsUp, down: eventsDown },
+    '2026_10_17_000001_plans_leads_notifications': { up: plansUp, down: plansDown },
+    '2026_10_17_000002_billing': { up: billingUp, down: billingDown },
   };
 }
 

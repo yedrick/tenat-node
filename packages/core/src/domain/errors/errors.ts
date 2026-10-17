@@ -141,3 +141,69 @@ export class InvalidConfigError extends TenancyError {
     super('TENANCY_INVALID_CONFIG', message);
   }
 }
+
+/** El plan del tenant no incluye el módulo. */
+export class FeatureNotInPlanError extends TenancyError {
+  constructor(
+    readonly tenantId: string,
+    readonly feature: string,
+    readonly plan: string | null,
+  ) {
+    super(
+      'TENANCY_FEATURE_NOT_IN_PLAN',
+      `The plan of tenant "${tenantId}" does not include "${feature}"`,
+      { tenantId, feature, plan },
+    );
+  }
+}
+
+/** El tenant llegó al límite de su plan (por ejemplo, de usuarios). */
+export class PlanLimitReachedError extends TenancyError {
+  constructor(
+    readonly tenantId: string,
+    readonly limitName: string,
+    readonly limit: number,
+    readonly plan: string | null,
+  ) {
+    super(
+      'TENANCY_PLAN_LIMIT_REACHED',
+      `The plan of tenant "${tenantId}" allows ${limit} ${limitName}`,
+      { tenantId, limit: limitName, max: limit, plan },
+    );
+  }
+}
+
+export class InvalidNotificationError extends TenancyError {
+  constructor(
+    readonly field: string,
+    reason: string,
+  ) {
+    super('TENANCY_INVALID_NOTIFICATION', `Invalid notification field "${field}": ${reason}`, {
+      field,
+    });
+  }
+}
+
+export class NotificationNotFoundError extends TenancyError {
+  constructor(readonly notificationId: string) {
+    super('TENANCY_NOTIFICATION_NOT_FOUND', `Notification "${notificationId}" not found`, {
+      notificationId,
+    });
+  }
+}
+
+export class InvalidBillingError extends TenancyError {
+  constructor(
+    readonly field: string,
+    reason: string,
+  ) {
+    super('TENANCY_INVALID_BILLING', `Invalid billing field "${field}": ${reason}`, { field });
+  }
+}
+
+/** Factura, suscripción o pasarela que no existe, o una operación que su estado no permite. */
+export class BillingError extends TenancyError {
+  constructor(code: 'NOT_FOUND' | 'CONFLICT' | 'NO_PROVIDER', message: string, details: Record<string, unknown> = {}) {
+    super(`TENANCY_BILLING_${code}`, message, details);
+  }
+}

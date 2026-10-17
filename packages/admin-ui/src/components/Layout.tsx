@@ -4,8 +4,11 @@ import { Link, navigate, usePath } from '../router';
 import { useColorMode } from '../theme';
 import {
   IconActivity,
+  IconBell,
   IconBuilding,
   IconDashboard,
+  IconInbox,
+  IconLayers,
   IconLogout,
   IconMenu,
   IconMoon,
@@ -13,6 +16,7 @@ import {
   IconShield,
   IconSun,
   IconUsers,
+  IconWallet,
   IconWebhook,
   IconX,
 } from './icons';
@@ -31,6 +35,10 @@ const NAV: { title: string; items: NavItem[] }[] = [
     items: [
       { to: '/', label: 'Dashboard', permission: 'metrics:read', icon: <IconDashboard /> },
       { to: '/tenants', label: 'Tenants', permission: 'tenants:read', icon: <IconBuilding /> },
+      { to: '/plans', label: 'Planes', permission: 'tenants:read', icon: <IconLayers /> },
+      { to: '/leads', label: 'Solicitudes', permission: 'leads:read', icon: <IconInbox /> },
+      { to: '/notifications', label: 'Avisos', permission: 'tenants:read', icon: <IconBell /> },
+      { to: '/billing', label: 'Cobros', permission: 'billing:read', icon: <IconWallet /> },
     ],
   },
   {

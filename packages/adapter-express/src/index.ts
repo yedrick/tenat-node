@@ -4,6 +4,7 @@ import {
   httpStatusFor,
   isTenancyError,
   requestLikeFromNode,
+  type FeatureName,
   type Tenancy,
   type Tenant,
 } from '@tenancy-node/core';
@@ -86,8 +87,8 @@ export function tenancyMiddleware(
         durationMs: Math.round((performance.now() - started) * 100) / 100,
       });
     };
-    // /tenancy/health responde en cualquier host, antes de identificar al tenant.
-    if (tenancy.http.isHealth(req.method, fullPath(req))) {
+    // /tenancy/health y /tenancy/plans responden en cualquier host, antes de identificar al tenant.
+    if (tenancy.http.isPublic(req.method, fullPath(req))) {
       res.once('close', log);
       sendRoute(tenancy, req, res).catch(next);
       return;
@@ -134,5 +135,29 @@ export function tenancyErrorHandler(tenancy: Tenancy): ErrorRequestHandler {
     tenancy.reportRequestError(error, { ...logContext(req), statusCode: status });
     if (!isTenancyError(error) || res.headersSent) return next(error);
     res.status(status).json(errorResponseBody(error));
+  };
+}
+
+/**
+ * Protege rutas por módulo del plan: si el plan del tenant no incluye **todos** los módulos,
+ * responde 403 `TENANCY_FEATURE_NOT_IN_PLAN` (con `details.feature`) sin llegar al handler.
+ *
+ * ```ts
+ * app.use('/api/reportes', requireFeature(tenancy, 'reportes'), reportesRouter);
+ * ```
+ */
+export function requireFeature(
+  tenancy: Tenancy,
+  ...features: [FeatureName, ...FeatureName[]]
+): RequestHandler {
+  return (req, res, next) => {
+    try {
+      tenancy.features.require(features);
+    } catch (error) {
+      if (!isTenancyError(error)) return next(error);
+      res.status(httpStatusFor(error)).json(errorResponseBody(error));
+      return;
+    }
+    next();
   };
 }

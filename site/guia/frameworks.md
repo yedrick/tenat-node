@@ -212,12 +212,16 @@ const tenancy = createTenancy({
 | `theme`        | `false`                 | `GET {prefix}/theme.css`: las variables CSS del tema del tenant                          |
 | `assets`       | `false`                 | `GET {prefix}/assets/<ruta>`: un archivo del almacenamiento del tenant                    |
 | `health`       | `false`                 | `GET {prefix}/health`: estado de la base central, caché, cola, almacenamiento y transportes. 200 o 503 |
+| `plans`        | `false`                 | `GET {prefix}/plans`: planes públicos, precios y catálogo de módulos (para la web comercial) |
 | `prefix`       | `'/tenancy'`            | Debe empezar con `/` y usar solo letras, dígitos, `/`, `_` y `-`                         |
 | `cacheControl` | `'public, max-age=300'` | `Cache-Control` de `me`, `theme.css` y `assets`                                          |
 
 Algunos detalles:
 
-- `publicFields` (por defecto `['name']`) acepta `name`, `plan`, `status` o llaves de `tenant.data`. Nada más sale en `/me`.
+- `publicFields` (por defecto `['name']`) acepta `name`, `plan`, `status`, `planLabel`, `features`, `limits` (del plan, ver [Planes y módulos](/guia/planes)) o llaves de `tenant.data`. Nada más sale en `/me`.
+- `plans: true` agrega `GET {prefix}/plans` (planes públicos con precios y módulos). Como `health`, responde en cualquier host.
+
+Para proteger rutas por módulo del plan, `requireFeature(tenancy, 'reportes')` existe en Express y Fastify: ver [Planes y módulos](/guia/planes#_3-protege-la-api).
 - `me`, `theme.css` y `assets` responden 404 en el contexto central. Llevan `ETag` y responden 304 con `If-None-Match`. También aceptan `HEAD`.
 - `assets` solo sirve archivos con el driver de disco local (o el de memoria). Con S3 responde 404: usa las URLs del bucket. Una ruta que intenta salir de la carpeta del tenant, o con un escape `%` mal formado (`%E0%A4%A`), responde 400 con `TENANCY_INVALID_STORAGE_PATH`. En Fastify, el router rechaza antes ese escape mal formado con su propio 400 (`FST_ERR_BAD_URL`).
 - `GET` y `HEAD {prefix}/health` responden en **cualquier** host, antes de identificar al tenant (salvo que `skip` la salte), y dejan su línea de log como cualquier petición. Cada chequeo tiene un límite de 3 segundos. No la expongas a internet si no quieres mostrar qué servicios usas.

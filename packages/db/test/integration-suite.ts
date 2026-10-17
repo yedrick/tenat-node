@@ -15,6 +15,8 @@ import {
   Encrypter,
   generateEncryptionKey,
   KyselyDomainRepository,
+  KyselyNotificationRepository,
+  KyselyBillingRepository,
   KyselyTenantRepository,
   NoDatabaseServerAvailableError,
   TablePrefixPlugin,
@@ -26,6 +28,8 @@ import {
 import {
   domainRepositoryContract,
   MemoryLogger,
+  notificationRepositoryContract,
+  billingRepositoryContract,
   tenantRepositoryContract,
 } from '@tenancy-node/testing';
 import { sql, type Migration } from 'kysely';
@@ -177,6 +181,16 @@ export function databaseIntegrationSuite(target: IntegrationTarget): void {
         return new KyselyDomainRepository(central);
       });
 
+      notificationRepositoryContract(`KyselyNotificationRepository (${target.name})`, async () => {
+        const { tenancy, n } = await make();
+        return new KyselyNotificationRepository(centralOf(tenancy, n));
+      });
+
+      billingRepositoryContract(`KyselyBillingRepository (${target.name})`, async () => {
+        const { tenancy, n } = await make();
+        return new KyselyBillingRepository(centralOf(tenancy, n));
+      });
+
       it.skipIf(!target.nativeQuery)('closes the native pool even when Kysely never used it', async () => {
         const driver = target.driver();
         const connection = parseConnectionUrl(url, driver.defaultPort);
@@ -212,11 +226,84 @@ export function databaseIntegrationSuite(target: IntegrationTarget): void {
           'admin_sessions',
           'impersonation_tokens',
           'audit_log',
+          'leads',
+          'notifications',
+          'notification_reads',
+          'notification_devices',
+          'billing_subscriptions',
+          'billing_invoices',
+          'billing_payments',
           'migrations',
         ]) {
           expect(tables).toContain(`t${n}_${name}`);
         }
         expect((await tenancy.database.servers.list()).map((s) => s.id)).toEqual(['default']);
+      });
+
+      it('stores plans, feature overrides and leads in the central tables', async () => {
+        const { tenancy, n } = await make();
+        const central = centralOf(tenancy, n);
+        const tenants = new KyselyTenantRepository(central);
+        const now = new Date();
+        await tenants.insert(
+          Tenant.create({
+            id: TenantId.create('clinica'),
+            name: 'Clínica',
+            plan: 'basico',
+            features: { add: ['reportes'], limits: { usuarios: 5, sucursales: null } },
+            now,
+          }),
+        );
+        await tenants.insert(Tenant.create({ id: TenantId.create('libre'), name: 'Libre', now }));
+        const found = (await tenants.findById(TenantId.create('clinica')))!;
+        expect(found.plan).toBe('basico');
+        expect(found.features).toEqual({
+          add: ['reportes'],
+          limits: { sucursales: null, usuarios: 5 },
+        });
+
+        found.update({ plan: 'pro', features: { remove: ['caja'] } }, new Date());
+        await tenants.save(found);
+        expect((await tenants.findById(TenantId.create('clinica')))!.features).toEqual({
+          remove: ['caja'],
+        });
+        expect((await tenants.list({ plan: 'pro' })).items.map((t) => t.id.value)).toEqual([
+          'clinica',
+        ]);
+        expect((await tenants.list({ plan: null })).items.map((t) => t.id.value)).toEqual([
+          'libre',
+        ]);
+        expect((await tenants.findById(TenantId.create('libre')))!.features).toBeNull();
+
+        await central.db
+          .insertInto('leads')
+          .values({
+            name: 'Ana',
+            company: 'Dental Sur',
+            email: 'ana@example.com',
+            plan: 'pro',
+            message: 'Quiero una demo',
+            data: JSON.stringify({ origen: 'web' }),
+            status: 'new',
+            notes: null,
+            tenant_id: null,
+            ip: '10.0.0.1',
+            city: null,
+            phone: null,
+            consent_at: now,
+            created_at: now,
+            updated_at: now,
+          })
+          .execute();
+        const lead = await central.db.selectFrom('leads').selectAll().executeTakeFirstOrThrow();
+        expect(lead).toMatchObject({ name: 'Ana', status: 'new', plan: 'pro' });
+        await expect(
+          central.db
+            .updateTable('leads')
+            .set({ status: 'inventado' })
+            .where('id', '=', lead.id)
+            .execute(),
+        ).rejects.toThrow();
       });
 
       it.skipIf(!schemaGeneration)('generates Prisma, Drizzle and TypeORM models from the real central tables', async () => {

@@ -72,7 +72,7 @@ En el contexto central, `tenancy.theme()` devuelve el tema por defecto. El CSS s
 | `custom`     | `--<nombre>` por cada variable                   |
 | `mode`       | `color-scheme: light`, `dark` o `light dark` (`auto`) |
 
-Las propiedades que no están definidas no aparecen en el CSS. `logo` y `favicon` no generan variables. `font` solo nombra la familia: cargar el archivo de la fuente es trabajo de tu frontend.
+Las propiedades que no están definidas no aparecen en el CSS. `logo` y `favicon` no generan variables. Sin `theme.fonts`, `font` solo nombra la familia y cargar la fuente es trabajo de tu frontend. Con `theme.fonts`, el tenant solo puede elegir esas fuentes y `theme.css` empieza con el `@import` que la carga (ver [Tipografías](/guia/planes#tipografias)).
 
 ## Cambiar el tema
 

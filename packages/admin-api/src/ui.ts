@@ -14,9 +14,12 @@ const TYPES: Record<string, string> = {
   '.json': 'application/json; charset=utf-8',
 };
 
-/** CSP del panel: solo recursos propios; nada inline ni de otros orígenes. */
+/**
+ * CSP del panel: solo recursos propios, nada inline. La única excepción es Google Fonts (hojas
+ * y archivos), para la vista previa de las fuentes del tema (`theme.fonts`).
+ */
 export const UI_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
+  "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; img-src 'self' data: https:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'";
 
 /** Carpeta de la SPA: una ruta propia o `@tenancy-node/admin-ui` instalado en el proyecto. */
 export function resolveUiRoot(ui: true | string): string {

@@ -1,5 +1,13 @@
 import * as v from 'valibot';
-import { DomainName, InvalidConfigError, type ThemeProps } from './domain/index.js';
+import {
+  DomainName,
+  InvalidConfigError,
+  type FeatureDefinition,
+  type FontDefinition,
+  type NotificationChannel,
+  type PlanDefinition,
+  type ThemeProps,
+} from './domain/index.js';
 import type {
   Bootstrapper,
   CacheStore,
@@ -22,6 +30,7 @@ import type { MemoryErrorTrackerOptions } from './observability/memory-error-tra
 import type { ResolverName } from './resolvers/resolvers.js';
 import type { TenancyPlugin } from './plugins.js';
 import type { HttpRoutesOptions } from './http/routes.js';
+import type { BillingRepository, NotificationRepository, PaymentProvider } from './ports/index.js';
 
 export interface TenancyConfig {
   /** Dominios de la app central ('tuapp.com'). Nunca resuelven a un tenant. */
@@ -44,7 +53,55 @@ export interface TenancyConfig {
   errorTracker?: ErrorTracker | MemoryErrorTrackerOptions;
   clock?: Clock;
   idGenerator?: IdGenerator;
-  theme?: { defaults?: Partial<ThemeProps> };
+  theme?: {
+    defaults?: Partial<ThemeProps>;
+    /**
+     * Fuentes que los tenants pueden elegir. Con lista, `theme.font` debe ser una de ellas y
+     * `/tenancy/theme.css` ya trae su carga (`@import`). Sin lista, cualquier nombre válido.
+     */
+    fonts?: readonly FontDefinition[];
+  };
+  /**
+   * Catálogo de módulos de tu app (`{ reportes: 'Reportes y PDF' }`). Si falta, sale de los
+   * módulos que nombran los planes.
+   */
+  features?: Readonly<Record<string, string | FeatureDefinition>>;
+  /**
+   * Planes con sus módulos, límites y precio. De aquí salen `tenancy.features`, `requireFeature`,
+   * `/tenancy/me`, el panel y `GET /tenancy/plans`. Sin planes, todo tenant tiene todos los módulos.
+   */
+  plans?: Readonly<Record<string, PlanDefinition>>;
+  /** Plan de los tenants que no tienen uno (`plan: null`). */
+  defaultPlan?: string;
+  /** Cobros a los tenants: suscripción, facturas y pagos (`tenancy.billing`). */
+  billing?: {
+    /** Dónde se guardan. Por defecto, la base central (con `@tenancy-node/db`) o memoria. */
+    repository?: BillingRepository;
+    /** Pasarelas en línea (Stripe, QR...). El pago `manual` siempre está. */
+    providers?: readonly PaymentProvider[];
+    /** Moneda si el plan no tiene precio. Por defecto `USD`. */
+    currency?: string;
+    /** Días para pagar una factura. Por defecto 7. */
+    dueDays?: number;
+    /** Cuántos días antes de que venza el período se emite la factura siguiente. Por defecto 7. */
+    invoiceDaysBefore?: number;
+    /** Suspender al tenant N días después del vencimiento sin pagar. Por defecto `null` (nunca). */
+    suspendAfterDays?: number | null;
+  };
+  /** Avisos de la plataforma a sus tenants (`tenancy.notifications`). */
+  notifications?: {
+    /** Dónde se guardan. Por defecto, la base central (con `@tenancy-node/db`) o memoria. */
+    repository?: NotificationRepository;
+    /** Canales de entrega fuera de la app: `firebase()` de `@tenancy-node/notify-firebase`, o el tuyo. */
+    channels?: readonly NotificationChannel[];
+    /**
+     * Cómo se entrega por los canales: `'background'` (por defecto) en este proceso sin hacer
+     * esperar a `send`; `'queue'` como trabajo de la cola (con reintentos; necesita un worker).
+     */
+    delivery?: 'background' | 'queue';
+    /** Cuánto se cachean los avisos vigentes en este proceso. Por defecto 15 s. */
+    cacheTtlMs?: number;
+  };
   /** Caché de búsqueda de tenants y dominios. `false` la desactiva. */
   lookupCache?: false | LookupCacheOptions;
   /**
@@ -114,6 +171,8 @@ const ConfigSchema = v.object({
       theme: v.optional(v.boolean()),
       assets: v.optional(v.boolean()),
       health: v.optional(v.boolean()),
+      plans: v.optional(v.boolean()),
+      notifications: v.optional(v.boolean()),
       prefix: v.optional(v.pipe(v.string(), v.regex(/^\/[a-z0-9/_-]*$/i))),
       cacheControl: v.optional(v.string()),
     }),
@@ -126,9 +185,47 @@ const ConfigSchema = v.object({
     }),
   ),
   idGenerator: v.optional(withMethods('generate')),
-  theme: v.optional(v.object({ defaults: v.optional(v.record(v.string(), v.unknown())) })),
+  theme: v.optional(
+    v.object({
+      defaults: v.optional(v.record(v.string(), v.unknown())),
+      fonts: v.optional(v.array(v.object({ family: v.string() }))),
+    }),
+  ),
+  features: v.optional(
+    v.record(v.string(), v.union([v.string(), v.object({ label: v.string() })])),
+  ),
+  plans: v.optional(
+    v.record(
+      v.string(),
+      v.object({
+        label: v.string(),
+        features: v.union([v.literal('*'), v.array(v.string())]),
+      }),
+    ),
+  ),
+  defaultPlan: v.optional(v.string()),
+  billing: v.optional(
+    v.object({
+      repository: v.optional(withMethods('findSubscription', 'saveSubscription', 'insertInvoice', 'listInvoices')),
+      providers: v.optional(v.array(withMethods('createCheckout', 'parseWebhook'))),
+      currency: v.optional(v.pipe(v.string(), v.regex(/^[A-Z]{3}$/))),
+      dueDays: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
+      invoiceDaysBefore: v.optional(v.pipe(v.number(), v.integer(), v.minValue(0))),
+      suspendAfterDays: v.optional(v.nullable(v.pipe(v.number(), v.integer(), v.minValue(0)))),
+    }),
+  ),
+  notifications: v.optional(
+    v.object({
+      repository: v.optional(withMethods('insert', 'findById', 'list', 'active', 'delete', 'markRead')),
+      channels: v.optional(v.array(withMethods('send'))),
+      delivery: v.optional(v.picklist(['background', 'queue'])),
+      cacheTtlMs: v.optional(v.pipe(v.number(), v.minValue(0))),
+    }),
+  ),
   invalidation: v.optional(withMethods('publish', 'subscribe', 'close')),
-  telemetry: v.optional(v.union([v.array(v.object({ name: v.string() })), v.object({ name: v.string() })])),
+  telemetry: v.optional(
+    v.union([v.array(v.object({ name: v.string() })), v.object({ name: v.string() })]),
+  ),
   lookupCache: v.optional(
     v.union([
       v.literal(false),

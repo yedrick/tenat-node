@@ -16,12 +16,18 @@ export type Permission =
   | 'metrics:read'
   | 'audit:read'
   | 'users:manage'
+  | 'leads:read'
+  | 'leads:write'
+  | 'notifications:send'
+  | 'billing:read'
+  | 'billing:write'
   | 'self';
 
 /**
  * Matriz de permisos:
- * - support: ver todo lo operativo, vaciar caché e impersonar (soporte al cliente).
- * - admin: además cambia tenants, dominios, tema, migraciones, webhooks y reintenta eventos.
+ * - support: ver todo lo operativo (y las solicitudes), vaciar caché e impersonar.
+ * - admin: además cambia tenants, planes, dominios, tema, migraciones, webhooks, solicitudes
+ *   y reintenta eventos.
  * - owner: además borra tenants y administra usuarios del panel.
  */
 const MATRIX: Record<Role, ReadonlySet<Permission>> = {
@@ -34,6 +40,8 @@ const MATRIX: Record<Role, ReadonlySet<Permission>> = {
     'webhooks:read',
     'events:read',
     'metrics:read',
+    'leads:read',
+    'billing:read',
   ]),
   admin: new Set<Permission>([
     'self',
@@ -49,6 +57,11 @@ const MATRIX: Record<Role, ReadonlySet<Permission>> = {
     'events:retry',
     'metrics:read',
     'audit:read',
+    'leads:read',
+    'leads:write',
+    'notifications:send',
+    'billing:read',
+    'billing:write',
   ]),
   owner: new Set<Permission>([
     'self',
@@ -66,6 +79,11 @@ const MATRIX: Record<Role, ReadonlySet<Permission>> = {
     'metrics:read',
     'audit:read',
     'users:manage',
+    'leads:read',
+    'leads:write',
+    'notifications:send',
+    'billing:read',
+    'billing:write',
   ]),
 };
 

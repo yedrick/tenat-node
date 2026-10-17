@@ -25,6 +25,8 @@ features:
     details: Cada log trae tenantId, operación, resultado y duración; cada error queda con su tenant. Trazas OpenTelemetry y métricas Prometheus.
   - title: Eventos hacia afuera
     details: CloudEvents con outbox transaccional hacia webhooks firmados, RabbitMQ, Redis Streams, Kafka o NATS.
+  - title: Planes, avisos y cobros
+    details: Módulos y límites por plan, avisos a todos o a algunos tenants (con push de Firebase) y cobros con suscripción, facturas y pagos.
   - title: Panel y CLI
     details: Admin API con roles, 2FA y auditoría, interfaz React, y un CLI para crear, migrar, correr comandos y mover tenants entre servidores.
 ---

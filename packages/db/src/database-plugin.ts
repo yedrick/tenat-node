@@ -39,6 +39,8 @@ import type { PlacementStrategy } from './provisioning/placement.js';
 import { schemaTables } from './schema/schema-tables.js';
 import { KyselyDomainRepository } from './repositories/kysely-domain-repository.js';
 import { KyselyTenantRepository } from './repositories/kysely-tenant-repository.js';
+import { KyselyNotificationRepository } from './repositories/kysely-notification-repository.js';
+import { KyselyBillingRepository } from './repositories/kysely-billing-repository.js';
 import {
   ProvisioningStepRepository,
   type ProvisioningStepRecord,
@@ -369,6 +371,8 @@ export function database(options: DatabasePluginOptions): TenancyPlugin<Database
       return {
         tenants: tenantsRepo,
         domains: new KyselyDomainRepository(central),
+        notifications: new KyselyNotificationRepository(central),
+        billing: new KyselyBillingRepository(central),
         provisioning,
         bootstrappers: [new DatabaseBootstrapper(connections, servers)],
         healthChecks: [

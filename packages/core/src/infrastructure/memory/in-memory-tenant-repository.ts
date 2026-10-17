@@ -32,6 +32,7 @@ export class InMemoryTenantRepository implements TenantRepository {
     const filtered = [...this.rows.values()]
       .filter((row) => query.withDeleted || row.deletedAt === null)
       .filter((row) => !statuses || statuses.includes(row.status))
+      .filter((row) => query.plan === undefined || row.plan === query.plan)
       .filter(
         (row) => !search || row.id.includes(search) || row.name.toLowerCase().includes(search),
       )

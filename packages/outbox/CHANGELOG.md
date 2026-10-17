@@ -1,5 +1,13 @@
 # @tenancy-node/outbox
 
+## 0.11.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @tenancy-node/core@0.11.0
+  - @tenancy-node/db@0.11.0
+
 ## 0.9.0
 
 ### Patch Changes

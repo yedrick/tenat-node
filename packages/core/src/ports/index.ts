@@ -15,3 +15,5 @@ export type * from './storage.js';
 export type * from './queue.js';
 export type * from './invalidation-bus.js';
 export type * from './telemetry.js';
+export type * from './notification-repository.js';
+export type * from './billing.js';

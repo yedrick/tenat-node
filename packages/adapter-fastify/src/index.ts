@@ -4,6 +4,7 @@ import {
   httpStatusFor,
   isTenancyError,
   requestLikeFromNode,
+  type FeatureName,
   type Tenancy,
   type Tenant,
   type TenantScope,
@@ -117,8 +118,8 @@ const plugin: FastifyPluginCallback<TenancyPluginOptions> = (fastify, options, d
   fastify.addHook('onRequest', (request, reply, next) => {
     if (options.skip?.(request)) return next();
     state(request)[kStarted] = performance.now();
-    // /tenancy/health responde en cualquier host, antes de identificar al tenant.
-    if (tenancy.http.isHealth(request.method, path(request))) {
+    // /tenancy/health y /tenancy/plans responden en cualquier host, antes de identificar al tenant.
+    if (tenancy.http.isPublic(request.method, path(request))) {
       void sendRoute(request, reply);
       return;
     }
@@ -192,3 +193,26 @@ const plugin: FastifyPluginCallback<TenancyPluginOptions> = (fastify, options, d
 /** Plugin de Fastify: identifica el tenant de cada petición y abre su contexto. */
 export const tenancyPlugin = fp(plugin, { name: '@tenancy-node/adapter-fastify', fastify: '5.x' });
 export default tenancyPlugin;
+
+/**
+ * Hook `preHandler` que protege rutas por módulo del plan: si el plan del tenant no incluye
+ * **todos** los módulos, responde 403 `TENANCY_FEATURE_NOT_IN_PLAN` sin llegar al handler.
+ *
+ * ```ts
+ * app.get('/api/reportes', { preHandler: requireFeature(tenancy, 'reportes') }, handler);
+ * // o para un grupo de rutas: instance.addHook('preHandler', requireFeature(tenancy, 'reportes'))
+ * ```
+ */
+export function requireFeature(
+  tenancy: Tenancy,
+  ...features: [FeatureName, ...FeatureName[]]
+): (request: FastifyRequest, reply: FastifyReply) => Promise<void> {
+  return async (_request, reply) => {
+    try {
+      tenancy.features.require(features);
+    } catch (error) {
+      if (!isTenancyError(error)) throw error;
+      await reply.code(httpStatusFor(error)).send(errorResponseBody(error));
+    }
+  };
+}

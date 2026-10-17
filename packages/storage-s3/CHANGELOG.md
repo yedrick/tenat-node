@@ -1,5 +1,12 @@
 # @tenancy-node/storage-s3
 
+## 0.11.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @tenancy-node/core@0.11.0
+
 ## 0.9.0
 
 ### Minor Changes

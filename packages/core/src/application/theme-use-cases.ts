@@ -1,4 +1,10 @@
-import { TenancyEvents, Theme, type ThemePatch, type ThemeProps } from '../domain/index.js';
+import {
+  FontCatalog,
+  TenancyEvents,
+  Theme,
+  type ThemePatch,
+  type ThemeProps,
+} from '../domain/index.js';
 import type { Clock, EventBus, TenantRepository } from '../ports/index.js';
 import { requireTenant, type TenantRef } from './shared.js';
 
@@ -8,6 +14,7 @@ export class UpdateThemeUseCase {
     private readonly events: EventBus,
     private readonly clock: Clock,
     private readonly themeDefaults: ThemeProps,
+    private readonly fonts: FontCatalog = new FontCatalog(),
   ) {}
 
   /** Aplica un cambio parcial al tema del tenant. `null` vuelve al tema por defecto. */
@@ -15,6 +22,7 @@ export class UpdateThemeUseCase {
     const tenant = await requireTenant(this.tenants, ref);
     const base = tenant.theme ?? Theme.create(this.themeDefaults);
     const next = patch === null ? null : base.merge(patch);
+    if (patch?.font) this.fonts.validate(patch.font);
 
     if (next === null ? tenant.theme === null : tenant.theme?.equals(next)) {
       return next ?? base;

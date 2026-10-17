@@ -20,6 +20,7 @@ export function tenantJson(t: Tenant) {
     name: s.name,
     status: s.status,
     plan: s.plan,
+    features: s.features ?? null,
     data: s.data,
     theme: s.theme,
     // Nunca la contraseña de la base (ni cifrada).
@@ -36,10 +37,29 @@ export function tenantJson(t: Tenant) {
 
 /** Formatos de logo aceptados, reconocidos por su contenido (nunca SVG: puede llevar scripts). */
 const IMAGE_TYPES = [
-  { type: 'image/png', ext: 'png', test: (b: Buffer) => b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) },
-  { type: 'image/jpeg', ext: 'jpg', test: (b: Buffer) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
-  { type: 'image/gif', ext: 'gif', test: (b: Buffer) => /^GIF8[79]a/.test(b.subarray(0, 6).toString('latin1')) },
-  { type: 'image/webp', ext: 'webp', test: (b: Buffer) => b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP' },
+  {
+    type: 'image/png',
+    ext: 'png',
+    test: (b: Buffer) =>
+      b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+  },
+  {
+    type: 'image/jpeg',
+    ext: 'jpg',
+    test: (b: Buffer) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  },
+  {
+    type: 'image/gif',
+    ext: 'gif',
+    test: (b: Buffer) => /^GIF8[79]a/.test(b.subarray(0, 6).toString('latin1')),
+  },
+  {
+    type: 'image/webp',
+    ext: 'webp',
+    test: (b: Buffer) =>
+      b.subarray(0, 4).toString('latin1') === 'RIFF' &&
+      b.subarray(8, 12).toString('latin1') === 'WEBP',
+  },
 ] as const;
 
 /** Carpeta de los logos subidos desde el panel, dentro del almacenamiento del tenant. */
@@ -71,10 +91,19 @@ const TenantIdParam = (value: string) => {
 };
 
 const ThemeBody = v.record(v.string(), v.unknown());
+/** Módulos sueltos y límites propios (se validan contra el catálogo en el núcleo). */
+const FeaturesBody = v.nullable(
+  v.object({
+    add: v.optional(v.array(v.string())),
+    remove: v.optional(v.array(v.string())),
+    limits: v.optional(v.record(v.string(), v.nullable(v.number()))),
+  }),
+);
 const CreateBody = v.object({
   id: v.string(),
   name: v.optional(v.pipe(v.string(), v.maxLength(150))),
   plan: v.optional(v.nullable(v.pipe(v.string(), v.maxLength(50)))),
+  features: v.optional(FeaturesBody),
   data: v.optional(v.record(v.string(), v.unknown())),
   domain: v.optional(v.union([v.string(), v.array(v.string())])),
   theme: v.optional(ThemeBody),
@@ -110,6 +139,7 @@ export function tenantRoutes(ctx: AdminContext) {
       query: {
         search: 'texto en id o nombre',
         status: 'estados separados por coma',
+        plan: 'id del plan (vacío = sin plan)',
         page: 'página',
         perPage: 'por página (máx. 100)',
       },
@@ -119,8 +149,10 @@ export function tenantRoutes(ctx: AdminContext) {
           if (!isTenantStatus(s))
             throw new AdminHttpError(422, 'ADMIN_INVALID_STATUS', `Unknown status ${s}`);
         const search = request.query.get('search') ?? undefined;
+        const plan = request.query.get('plan');
         const result = await t.tenants.list({
           ...page(request),
+          ...(plan !== null ? { plan: plan === '' ? null : plan } : {}),
           ...(status ? { status: status as TenantStatus[] } : {}),
           ...(search ? { search } : {}),
         });
@@ -163,6 +195,7 @@ export function tenantRoutes(ctx: AdminContext) {
             id: input.id,
             ...(input.name ? { name: input.name } : {}),
             ...(input.plan !== undefined ? { plan: input.plan } : {}),
+            ...(input.features !== undefined ? { features: input.features } : {}),
             ...(input.data ? { data: input.data } : {}),
             ...(input.domain ? { domain: input.domain } : {}),
             ...(input.theme ? { theme: input.theme } : {}),
@@ -202,6 +235,9 @@ export function tenantRoutes(ctx: AdminContext) {
               isPrimary: d.isPrimary,
               verifiedAt: d.verifiedAt,
             })),
+            // Plan efectivo: módulos y límites (plan + módulos sueltos).
+            plan: { enabled: t.features.enabled, ...t.features.of(tenant) },
+            fonts: t.theme.fonts(),
             provisioning: steps.filter((s) => s.runId === lastRun),
             errors: t.observability
               .errors({ tenantId: tenant.id.value, limit: 20 })
@@ -215,10 +251,12 @@ export function tenantRoutes(ctx: AdminContext) {
       path: '/tenants/:id',
       permission: 'tenants:write',
       tag: 'tenants',
-      summary: 'Cambia nombre, plan o datos (los datos se combinan; removeData borra llaves)',
+      summary:
+        'Cambia nombre, plan, módulos sueltos o datos (los datos se combinan; removeData borra llaves)',
       body: v.object({
         name: v.optional(v.string()),
         plan: v.optional(v.nullable(v.string())),
+        features: v.optional(FeaturesBody),
         data: v.optional(v.record(v.string(), v.unknown())),
         /** Llaves de `data` que se borran (JSON no tiene `undefined`). */
         removeData: v.optional(v.array(v.string())),
@@ -237,16 +275,20 @@ export function tenantRoutes(ctx: AdminContext) {
           await t.tenants.update(before.id, {
             ...(b.name !== undefined ? { name: b.name } : {}),
             ...(b.plan !== undefined ? { plan: b.plan } : {}),
+            ...(b.features !== undefined ? { features: b.features } : {}),
             ...(data !== undefined ? { data } : {}),
           }),
         );
+        const tracked = {
+          name: b.name,
+          plan: b.plan,
+          ...(b.features !== undefined ? { features: b.features } : {}),
+          ...(data ? { data } : {}),
+        };
         await ctx.record(request, {
           action: 'tenant.update',
           tenantId: before.id,
-          changes: {
-            before: pick(before, { name: b.name, plan: b.plan, ...(data ? { data } : {}) }),
-            after: pick(after, { name: b.name, plan: b.plan, ...(data ? { data } : {}) }),
-          },
+          changes: { before: pick(before, tracked), after: pick(after, tracked) },
         });
         return { body: after };
       },
@@ -708,7 +750,7 @@ function pick(value: Record<string, unknown>, keys: Record<string, unknown>) {
 /** Explorador de datos de solo lectura. Tablas y columnas se validan contra la estructura real. */
 function dataExplorer(ctx: AdminContext) {
   const t = ctx.tenancy;
-    // En modo schema, tables() devuelve solo las del schema del tenant (nunca las de otros tenants).
+  // En modo schema, tables() devuelve solo las del schema del tenant (nunca las de otros tenants).
   const tables = (id: string) => t.run(id, () => t.database.tables());
   return [
     route({
@@ -788,7 +830,9 @@ function dataExplorer(ctx: AdminContext) {
             base.select((eb) => eb.fn.countAll().as('n')).executeTakeFirstOrThrow(),
             (sort ? base.orderBy(sql.ref(sort), order) : base.orderBy(sql`(select null)`))
               .selectAll()
-              .$call((q) => paginate(t.database.connection().kind, q, perPage, (pageNumber - 1) * perPage))
+              .$call((q) =>
+                paginate(t.database.connection().kind, q, perPage, (pageNumber - 1) * perPage),
+              )
               .execute(),
           ]);
           return { total: Number(count.n), rows: rows as Record<string, unknown>[] };

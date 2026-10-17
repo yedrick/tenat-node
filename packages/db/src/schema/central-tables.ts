@@ -27,6 +27,8 @@ export interface TenantsTable {
   name: string;
   status: string;
   plan: string | null;
+  /** Módulos sueltos y límites propios (0.11). */
+  features: Json<unknown> | null;
   data: Json<unknown>;
   theme: Json<unknown> | null;
   database_server_id: string | null;
@@ -160,6 +162,110 @@ export interface AuditLogTable {
   created_at: Timestamp;
 }
 
+export interface LeadsTable {
+  id: Generated<number | string>;
+  name: string;
+  company: string | null;
+  city: string | null;
+  phone: string | null;
+  email: string | null;
+  plan: string | null;
+  message: string | null;
+  data: Json<unknown> | null;
+  status: string;
+  notes: string | null;
+  tenant_id: string | null;
+  ip: string | null;
+  consent_at: NullableTimestamp;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface NotificationsTable {
+  id: string;
+  title: string;
+  body: string;
+  level: string;
+  audience_type: string;
+  audience_values: Json<unknown> | null;
+  roles: Json<unknown> | null;
+  link_url: string | null;
+  link_label: string | null;
+  starts_at: NullableTimestamp;
+  expires_at: NullableTimestamp;
+  created_by: string | null;
+  created_at: Timestamp;
+}
+
+export interface NotificationReadsTable {
+  notification_id: string;
+  tenant_id: string;
+  user_id: string;
+  read_at: Timestamp;
+}
+
+export interface NotificationDevicesTable {
+  token: string;
+  tenant_id: string;
+  user_id: string;
+  platform: string;
+  roles: Json<unknown> | null;
+  last_seen_at: Timestamp;
+  created_at: Timestamp;
+}
+
+type Cents = ColumnType<number | string, number, number>;
+
+export interface BillingSubscriptionsTable {
+  tenant_id: string;
+  plan: string | null;
+  period: string;
+  status: string;
+  currency: string;
+  amount_cents: Cents;
+  current_period_start: Timestamp;
+  current_period_end: Timestamp;
+  provider: string;
+  provider_ref: string | null;
+  canceled_at: NullableTimestamp;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface BillingInvoicesTable {
+  id: string;
+  tenant_id: string;
+  description: string;
+  currency: string;
+  amount_cents: Cents;
+  paid_cents: Cents;
+  status: string;
+  period_start: NullableTimestamp;
+  period_end: NullableTimestamp;
+  due_at: Timestamp;
+  paid_at: NullableTimestamp;
+  provider: string | null;
+  provider_ref: string | null;
+  checkout_url: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface BillingPaymentsTable {
+  id: string;
+  invoice_id: string;
+  tenant_id: string;
+  amount_cents: Cents;
+  currency: string;
+  method: string;
+  reference: string | null;
+  provider: string;
+  provider_ref: string | null;
+  paid_at: Timestamp;
+  recorded_by: string | null;
+  created_at: Timestamp;
+}
+
 /** Tablas centrales con nombres cortos; `TablePrefixPlugin` agrega el prefijo. */
 export interface CentralTables {
   database_servers: DatabaseServersTable;
@@ -173,6 +279,13 @@ export interface CentralTables {
   admin_sessions: AdminSessionsTable;
   impersonation_tokens: ImpersonationTokensTable;
   audit_log: AuditLogTable;
+  leads: LeadsTable;
+  notifications: NotificationsTable;
+  notification_reads: NotificationReadsTable;
+  notification_devices: NotificationDevicesTable;
+  billing_subscriptions: BillingSubscriptionsTable;
+  billing_invoices: BillingInvoicesTable;
+  billing_payments: BillingPaymentsTable;
 }
 
 /** Todas las tablas que crea `install()` (sin prefijo). */
@@ -188,6 +301,13 @@ export const CENTRAL_TABLES = [
   'admin_sessions',
   'impersonation_tokens',
   'audit_log',
+  'leads',
+  'notifications',
+  'notification_reads',
+  'notification_devices',
+  'billing_subscriptions',
+  'billing_invoices',
+  'billing_payments',
 ] as const;
 
 export type BigIdColumn = BigId;

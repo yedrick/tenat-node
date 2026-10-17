@@ -21,7 +21,12 @@ import {
   type AdminRequest,
   type RouteDefinition,
 } from './http.js';
+import { Leads, type Lead, type NewLead } from './leads.js';
 import { authRoutes } from './routes/auth.js';
+import { createLead, leadRoutes } from './routes/leads.js';
+import { billingRoutes } from './routes/billing.js';
+import { notificationRoutes } from './routes/notifications.js';
+import { planRoutes } from './routes/plans.js';
 import { eventRoutes, systemRoutes } from './routes/system.js';
 import { tenantRoutes } from './routes/tenants.js';
 import { tenantUserRoutes } from './routes/tenant-users.js';
@@ -46,6 +51,12 @@ export interface AdminApi {
   readonly prefix: string;
   /** Contexto interno (usuarios, auditoría): lo usa el CLI (`tenancy admin:user`). */
   readonly context: AdminContext;
+  /** Solicitudes de la web comercial (aunque la ruta pública esté apagada). */
+  readonly leads: {
+    /** Guarda una solicitud y publica `lead.created` (por ejemplo, desde tu propio formulario). */
+    create(input: NewLead): Promise<Lead>;
+    list: Leads['list'];
+  };
 }
 
 function cookieValue(header: string | undefined, name: string): string | undefined {
@@ -87,6 +98,14 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
     tenantUsers: options.tenantUsers,
     publicDocs: options.publicDocs ?? true,
     issuer: options.issuer ?? 'tenancy-node',
+    leads: options.leads
+      ? {
+          rateLimit: { max: 5, windowMs: 3_600_000 },
+          requireConsent: true,
+          extraFields: [],
+          ...(options.leads === true ? {} : options.leads),
+        }
+      : null,
   };
   const audit = new AuditLog(central);
   const context: AdminContext = {
@@ -96,6 +115,7 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
     sessions: new AdminSessions(central, options.sessionSecret, resolved.sessionTtlMs),
     audit,
     limiter: new RateLimiter(resolved.loginRateLimit.max, resolved.loginRateLimit.windowMs),
+    leads: new Leads(central),
     options: resolved,
     record: (request, input) =>
       audit.record({ ...input, adminUserId: request.user?.id ?? null, ip: request.ip }),
@@ -105,6 +125,10 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
     ...authRoutes(context),
     ...tenantRoutes(context),
     ...tenantUserRoutes(context),
+    ...planRoutes(context),
+    ...leadRoutes(context),
+    ...notificationRoutes(context),
+    ...billingRoutes(context),
     ...eventRoutes(context),
     ...systemRoutes(context),
   ];
@@ -261,7 +285,17 @@ export function createAdminApi(tenancy: Tenancy, options: AdminOptions): AdminAp
     return true;
   };
 
-  return { handle, openapi, prefix: resolved.prefix, context, uiPath: uiRoot ? uiBase : undefined };
+  return {
+    handle,
+    openapi,
+    prefix: resolved.prefix,
+    context,
+    uiPath: uiRoot ? uiBase : undefined,
+    leads: {
+      create: (input) => createLead(context, input),
+      list: (query) => context.leads.list(query),
+    },
+  };
 }
 
 const FIELD_KEY = /^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/;

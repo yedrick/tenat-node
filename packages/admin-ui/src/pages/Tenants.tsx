@@ -14,9 +14,11 @@ import {
   Input,
   PageHeader,
   RelativeTime,
+  Select,
   StatusBadge,
   cx,
 } from '../components/ui';
+import { planLabel, usePlans } from '../plans';
 import { navigate, useQueryParam } from '../router';
 import type { Page, Tenant } from '../types';
 import { NewTenant } from './NewTenant';
@@ -36,6 +38,12 @@ export function Tenants() {
   const [search, setSearch] = useState(fromUrl);
   const [debounced, setDebounced] = useState(fromUrl);
   const [status, setStatus] = useState('');
+  // `?plan=basico`; `?plan=` = sin plan; sin el parámetro = todos.
+  const planFromUrl = useQueryParam('plan');
+  const [plan, setPlan] = useState<string | null>(planFromUrl);
+  useEffect(() => (setPlan(planFromUrl), setPage(1)), [planFromUrl]);
+  const plans = usePlans();
+  const planList = plans.data?.enabled ? plans.data.plans : [];
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
   const [entering, setEntering] = useState<Tenant | null>(null);
@@ -51,6 +59,7 @@ export function Tenants() {
     perPage: '20',
     ...(debounced ? { search: debounced } : {}),
     ...(status ? { status } : {}),
+    ...(plan !== null ? { plan } : {}),
   });
   const tenants = useQuery({
     queryKey: ['tenants', params.toString()],
@@ -108,6 +117,26 @@ export function Tenants() {
               </button>
             ))}
           </div>
+          {(planList.length > 0 || plan !== null) && (
+            <Select
+              aria-label="Plan"
+              className="ml-auto max-w-52"
+              value={plan === null ? '*' : plan}
+              onChange={(e) => {
+                const value = e.target.value;
+                setPlan(value === '*' ? null : value);
+                setPage(1);
+              }}
+              options={[
+                ['*', 'Todos los planes'],
+                ...planList.map((p) => [p.id, p.label] as [string, string]),
+                ...(plan && !planList.some((p) => p.id === plan)
+                  ? [[plan, plan] as [string, string]]
+                  : []),
+                ['', 'Sin plan'],
+              ]}
+            />
+          )}
         </div>
         <DataTable
           data={data?.items ?? []}
@@ -136,7 +165,11 @@ export function Tenants() {
               header: 'Plan',
               cell: ({ row }) =>
                 row.original.plan ? (
-                  <Badge tone="info">{row.original.plan}</Badge>
+                  <Badge tone="info">{planLabel(plans.data, row.original.plan)}</Badge>
+                ) : plans.data?.enabled && plans.data.defaultPlan ? (
+                  <span className="text-xs text-muted" title="Sin plan: usa el plan por defecto">
+                    {planLabel(plans.data, plans.data.defaultPlan)} (por defecto)
+                  </span>
                 ) : (
                   <span className="text-muted">—</span>
                 ),

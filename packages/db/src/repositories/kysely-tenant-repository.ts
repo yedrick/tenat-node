@@ -3,6 +3,7 @@ import {
   TenantAlreadyExistsError,
   type Page,
   type TenantId,
+  type TenantFeatureOverrides,
   type TenantListQuery,
   type TenantRepository,
   type TenantSnapshot,
@@ -56,10 +57,15 @@ export class KyselyTenantRepository implements TenantRepository {
         statuses.length === 0
           ? base.where(sql<boolean>`1 = 0`)
           : base.where('status', 'in', statuses);
+    if (query.plan !== undefined)
+      base =
+        query.plan === null ? base.where('plan', 'is', null) : base.where('plan', '=', query.plan);
     if (query.search) {
-            const pattern = likeContains(query.search);
+      const pattern = likeContains(query.search);
       const kind = this.central.kind;
-      base = base.where((eb) => eb.or([likeLower(kind, 'id', pattern), likeLower(kind, 'name', pattern)]));
+      base = base.where((eb) =>
+        eb.or([likeLower(kind, 'id', pattern), likeLower(kind, 'name', pattern)]),
+      );
     }
 
     const [count, rows] = await Promise.all([
@@ -101,6 +107,7 @@ function toRow(s: TenantSnapshot) {
     name: s.name,
     status: s.status,
     plan: s.plan,
+    features: s.features ? JSON.stringify(s.features) : null,
     data: JSON.stringify(s.data),
     theme: s.theme ? JSON.stringify(s.theme) : null,
     database_server_id: s.database?.serverId ?? null,
@@ -123,6 +130,7 @@ function fromRow(row: Row): TenantSnapshot {
     name: row.name,
     status: row.status as TenantStatus,
     plan: row.plan,
+    features: row.features == null ? null : parseJson<TenantFeatureOverrides>(row.features),
     data: parseJson<Record<string, unknown>>(row.data) ?? {},
     theme: row.theme === null ? null : parseJson<ThemeProps>(row.theme),
     database:

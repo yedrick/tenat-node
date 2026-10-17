@@ -2,6 +2,7 @@ import * as v from 'valibot';
 import { ROLES, type Role } from '../auth/permissions.js';
 import type { AdminContext } from '../context.js';
 import { AdminHttpError, route } from '../http.js';
+import { tenantsByPlan } from './plans.js';
 
 function requireFeature<T>(value: T | undefined, name: string): T {
   if (!value)
@@ -256,7 +257,8 @@ export function systemRoutes(ctx: AdminContext) {
       path: '/metrics',
       permission: 'metrics:read',
       tag: 'system',
-      summary: 'Tenants por estado, pools, salud, errores por tenant y outbox',
+      summary:
+        'Tenants por estado y por plan, solicitudes, pools, salud, errores por tenant y outbox',
       async handler() {
         const byStatus = await ctx.central.db
           .selectFrom('tenants')
@@ -280,6 +282,8 @@ export function systemRoutes(ctx: AdminContext) {
             health: await t.health(),
             errors: t.observability.summary().slice(0, 20),
             outbox: t.outbox ? await t.outbox.stats() : null,
+            plans: t.features.enabled ? await tenantsByPlan(ctx) : null,
+            leads: await ctx.leads.countByStatus(),
           },
         };
       },

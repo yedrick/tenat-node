@@ -1,5 +1,6 @@
 import { InvalidTenantDataError, InvalidTenantStatusTransitionError } from '../errors/errors.js';
 import { TenantId } from '../value-objects/tenant-id.js';
+import { normalizeFeatureOverrides, type TenantFeatureOverrides } from './plan.js';
 import { canTransition, type TenantStatus } from './tenant-status.js';
 import { Theme, type ThemeProps } from './theme.js';
 
@@ -25,6 +26,8 @@ export interface TenantSnapshot {
   name: string;
   status: TenantStatus;
   plan: string | null;
+  /** Módulos sueltos y límites propios. Opcional en repositorios anteriores a 0.11. */
+  features?: TenantFeatureOverrides | null;
   data: TenantData;
   theme: ThemeProps | null;
   database: TenantDatabase | null;
@@ -40,6 +43,7 @@ export interface CreateTenantProps {
   id: TenantId;
   name: string;
   plan?: string | null;
+  features?: TenantFeatureOverrides | null;
   data?: TenantData;
   theme?: Theme | null;
   now: Date;
@@ -48,6 +52,8 @@ export interface CreateTenantProps {
 export interface TenantChanges {
   name?: string;
   plan?: string | null;
+  /** Módulos sueltos y límites propios; reemplaza los anteriores. `null` los quita. */
+  features?: TenantFeatureOverrides | null;
   /** Se combina (merge superficial) con los datos actuales. `undefined` en una llave la elimina. */
   data?: TenantData;
 }
@@ -62,6 +68,7 @@ export class Tenant {
     private _name: string,
     private _status: TenantStatus,
     private _plan: string | null,
+    private _features: TenantFeatureOverrides | null,
     private _data: TenantData,
     private _theme: Theme | null,
     private _database: TenantDatabase | null,
@@ -80,6 +87,7 @@ export class Tenant {
       validateName(props.name),
       'provisioning',
       validatePlan(props.plan ?? null),
+      normalizeFeatureOverrides(props.features),
       validateData(props.data ?? {}),
       props.theme ?? null,
       null,
@@ -99,6 +107,7 @@ export class Tenant {
       snapshot.name,
       snapshot.status,
       snapshot.plan,
+      snapshot.features ? structuredClone(snapshot.features) : null,
       structuredClone(snapshot.data),
       snapshot.theme ? Theme.create(snapshot.theme) : null,
       snapshot.database ? { ...snapshot.database } : null,
@@ -119,6 +128,10 @@ export class Tenant {
   }
   get plan(): string | null {
     return this._plan;
+  }
+  /** Módulos sueltos y límites propios (sobre el plan). */
+  get features(): Readonly<TenantFeatureOverrides> | null {
+    return this._features;
   }
   get data(): Readonly<TenantData> {
     return this._data;
@@ -161,6 +174,13 @@ export class Tenant {
     if (changes.plan !== undefined && changes.plan !== this._plan) {
       this._plan = validatePlan(changes.plan);
       changed.push('plan');
+    }
+    if (changes.features !== undefined) {
+      const next = normalizeFeatureOverrides(changes.features);
+      if (JSON.stringify(next) !== JSON.stringify(this._features)) {
+        this._features = next;
+        changed.push('features');
+      }
     }
     if (changes.data !== undefined) {
       const merged: TenantData = { ...this._data };
@@ -233,6 +253,7 @@ export class Tenant {
       name: this._name,
       status: this._status,
       plan: this._plan,
+      features: this._features ? structuredClone(this._features) : null,
       data: structuredClone(this._data),
       theme: this._theme ? this._theme.toJSON() : null,
       database: this._database ? { ...this._database } : null,

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Tenant } from '../domain/index.js';
+import type { FeatureInfo, PublicPlan, ResolvedFeatures, Tenant } from '../domain/index.js';
 import { InvalidStoragePathError, type TenantStorage } from '../storage/tenant-storage.js';
 
 export interface HttpRoutesOptions {
@@ -9,6 +9,10 @@ export interface HttpRoutesOptions {
   theme?: boolean;
   /** `GET /tenancy/assets/*`: archivos del tenant con los drivers `local` y `memory` (con S3 las URLs apuntan al bucket). */
   assets?: boolean;
+  /** `GET /tenancy/notifications`: avisos vigentes del tenant (sin estado de lectura: eso lo da tu API con el usuario). */
+  notifications?: boolean;
+  /** `GET /tenancy/plans`: planes públicos con precios y módulos (para la web comercial). Responde en cualquier host. */
+  plans?: boolean;
   /** `GET /tenancy/health`: estado de la base central, caché, cola y almacenamiento. */
   health?: boolean;
   /** Prefijo de las rutas. Por defecto `/tenancy`. */
@@ -46,6 +50,12 @@ export interface RoutesHost {
   storage(): TenantStorage;
   health(): Promise<HealthReport>;
   storageDriverName(): string;
+  /** Módulos y límites efectivos del tenant; `undefined` sin `plans` en la configuración. */
+  features(tenant: Tenant): ResolvedFeatures | undefined;
+  /** Planes públicos y catálogo de módulos. */
+  plans(): { plans: PublicPlan[]; features: FeatureInfo[]; defaultPlan: string | null };
+  /** Avisos vigentes del tenant, para `GET /tenancy/notifications`. */
+  notifications(tenant: Tenant): Promise<unknown[]>;
 }
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -70,6 +80,11 @@ export function contentTypeFor(path: string): string {
 }
 
 const TENANT_FIELDS = new Set(['name', 'plan', 'status']);
+/**
+ * Campos de `publicFields` que salen del plan: módulos, límites y nombre del plan.
+ * Sin `plans` en la configuración se leen de `data`, como antes de 0.11.
+ */
+const FEATURE_FIELDS = new Set(['features', 'limits', 'planLabel']);
 
 /**
  * Rutas HTTP opcionales, independientes del framework: devuelven `{ status, headers, body }`
@@ -90,7 +105,28 @@ export class TenancyHttpRoutes {
 
   get enabled(): boolean {
     return Boolean(
-      this.options.me || this.options.theme || this.options.assets || this.options.health,
+      this.options.me ||
+      this.options.theme ||
+      this.options.assets ||
+      this.options.health ||
+      this.options.plans ||
+      this.options.notifications,
+    );
+  }
+
+  /**
+   * `true` para las rutas que responden en cualquier host, antes de identificar al tenant
+   * (`health` y `plans`). Los adaptadores las atienden sin resolver el tenant.
+   */
+  isPublic(method: string, path: string): boolean {
+    return this.isHealth(method, path) || this.isPlans(method, path);
+  }
+
+  private isPlans(method: string, path: string): boolean {
+    return (
+      Boolean(this.options.plans) &&
+      (method === 'GET' || method === 'HEAD') &&
+      path === `${this.prefix}/plans`
     );
   }
 
@@ -106,9 +142,10 @@ export class TenancyHttpRoutes {
   /** `true` si la ruta es de tenancy y está activada. */
   matches(method: string, path: string): boolean {
     if (method !== 'GET' && method !== 'HEAD') return false;
-    if (this.isHealth('GET', path)) return true;
+    if (this.isPublic('GET', path)) return true;
     if (this.options.me && path === `${this.prefix}/me`) return true;
     if (this.options.theme && path === `${this.prefix}/theme.css`) return true;
+    if (this.options.notifications && path === `${this.prefix}/notifications`) return true;
     return Boolean(this.options.assets) && path.startsWith(`${this.prefix}/assets/`);
   }
 
@@ -119,6 +156,17 @@ export class TenancyHttpRoutes {
     if (this.isHealth(method, path)) {
       const health = await this.health();
       return method === 'HEAD' ? { ...health, body: '' } : health;
+    }
+    if (this.isPlans(method, path)) {
+      const plans = this.plans();
+      if (notModified(request, plans.headers.etag)) {
+        return {
+          status: 304,
+          headers: { etag: plans.headers.etag!, 'cache-control': plans.headers['cache-control']! },
+          body: '',
+        };
+      }
+      return method === 'HEAD' ? { ...plans, body: '' } : plans;
     }
 
     // Las rutas de tenant nunca responden en el contexto central.
@@ -131,6 +179,13 @@ export class TenancyHttpRoutes {
     let response: HttpResponse;
     if (path === `${this.prefix}/me`) response = await this.me(tenant);
     else if (path === `${this.prefix}/theme.css`) response = this.themeCss();
+    else if (path === `${this.prefix}/notifications`) {
+      // Cambian en cualquier momento: sin caché del navegador.
+      response = {
+        ...json(200, await this.host.notifications(tenant)),
+        headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
+      };
+    }
     else {
       // Un escape `%` mal formado es culpa del cliente: 400, no un URIError (500).
       let relative: string;
@@ -181,11 +236,16 @@ export class TenancyHttpRoutes {
       id: tenant.id.value,
       theme: { ...theme.toJson(), ...(logo ? { logo } : {}) },
     };
+    const resolved = this.publicFields.some((f) => FEATURE_FIELDS.has(f))
+      ? this.host.features(tenant)
+      : undefined;
     for (const field of this.publicFields) {
       if (field === 'id' || field === 'theme') continue;
       const value = TENANT_FIELDS.has(field)
         ? (tenant as unknown as Record<string, unknown>)[field]
-        : tenant.data[field];
+        : resolved && FEATURE_FIELDS.has(field)
+          ? resolved[field as 'features' | 'limits' | 'planLabel']
+          : tenant.data[field];
       if (value !== undefined) body[field] = value;
     }
     const text = JSON.stringify(body);
@@ -196,6 +256,20 @@ export class TenancyHttpRoutes {
         etag: `"${createHash('sha1').update(text).digest('base64url')}"`,
         'cache-control': this.cacheControl,
         vary: 'Host',
+      },
+      body: text,
+    };
+  }
+
+  private plans(): HttpResponse {
+    const text = JSON.stringify(this.host.plans());
+    return {
+      status: 200,
+      headers: {
+        'content-type': 'application/json; charset=utf-8',
+        etag: `"${createHash('sha1').update(text).digest('base64url')}"`,
+        'cache-control': this.cacheControl,
+        'access-control-allow-origin': '*',
       },
       body: text,
     };

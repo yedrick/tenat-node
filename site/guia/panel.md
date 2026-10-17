@@ -175,6 +175,7 @@ const admin = createAdminApi(tenancy, {
 | `publicDocs`              | `true`                                                 | `/openapi.json` sin autenticación                           |
 | `issuer`                  | `tenancy-node`                                         | Nombre que muestra la app de autenticación (2FA)            |
 | `ui`                      | apagado                                                | `true` sirve `@tenancy-node/admin-ui`; o la ruta de una UI compilada |
+| `leads`                   | apagado                                                | Formulario público "Solicitar demo" (`POST /leads`). Ver [Planes y módulos](/guia/planes#solicitar-demo-solicitudes-en-el-panel) |
 
 `serveAdmin` acepta además `port` y `host`.
 
@@ -394,6 +395,17 @@ app.get('/entrar-como', async (req, res) => {
 ```
 
 El token se guarda como hash, vence en 60 s por defecto, vale solo en su tenant y se marca como usado en la misma sentencia que lo valida. Al usarse deja un log `warn` con `operation: 'admin.impersonation_used'`. Cómo inicias la sesión del usuario es cosa de tu app.
+
+### Planes, solicitudes, avisos y cobros
+
+| Sección del panel | API                                                                 | Permiso                     | Guía                                  |
+| ----------------- | ------------------------------------------------------------------- | --------------------------- | ------------------------------------- |
+| Planes            | `GET /plans`, `GET /fonts`, `PATCH /tenants/:id { plan, features }`  | `tenants:read` / `tenants:write` | [Planes y módulos](/guia/planes) |
+| Solicitudes       | `GET/PATCH/DELETE /leads`, `POST /leads` (público con `leads`)       | `leads:read` / `leads:write` | [Planes y módulos](/guia/planes#solicitar-demo-solicitudes-en-el-panel) |
+| Avisos            | `GET/POST /notifications`, `POST /notifications/reach`, `POST /notifications/:id/deliver`, `DELETE /notifications/:id` | `tenants:read` / `notifications:send` | [Avisos y push](/guia/avisos) |
+| Cobros            | `GET /billing/invoices`, `GET /tenants/:id/billing`, `PUT /tenants/:id/billing/subscription`, `POST /billing/invoices/:id/payments`, `POST /billing/run`, `POST /billing/webhooks/:provider` (público) | `billing:read` / `billing:write` | [Cobros](/guia/cobros) |
+
+`support` ve solicitudes y cobros; `admin` y `owner` además envían avisos, registran pagos y gestionan suscripciones.
 
 ## Auditoría
 

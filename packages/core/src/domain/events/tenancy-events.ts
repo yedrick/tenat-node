@@ -1,5 +1,7 @@
 import type { Domain } from '../entities/domain.js';
 import type { Tenant } from '../entities/tenant.js';
+import type { NotificationAudience, NotificationLevel } from '../entities/notification.js';
+import type { ResolvedFeatures, TenantFeatureOverrides } from '../entities/plan.js';
 import type { TenantStatus } from '../entities/tenant-status.js';
 import type { ThemeProps } from '../entities/theme.js';
 import type { DomainEvent } from './domain-event.js';
@@ -14,6 +16,16 @@ export interface TenantEventData {
 
 export interface TenantUpdatedEventData extends TenantEventData {
   changes: string[];
+}
+
+/** Cambió el plan del tenant o sus módulos sueltos. */
+export interface TenantPlanChangedEventData extends TenantEventData {
+  previousPlan: string | null;
+  /** Módulos sueltos y límites propios actuales. */
+  overrides: TenantFeatureOverrides | null;
+  /** Módulos y límites efectivos después del cambio. */
+  features: string[];
+  limits: Record<string, number | null>;
 }
 
 export interface TenantMaintenanceEventData extends TenantEventData {
@@ -51,6 +63,58 @@ export interface DatabaseMovedEventData {
   sourceDropped: boolean;
 }
 
+/** Se envió un aviso de la plataforma (fechas en ISO 8601). */
+export interface NotificationSentEventData {
+  id: string;
+  title: string;
+  body: string;
+  level: NotificationLevel;
+  audience: NotificationAudience;
+  roles: readonly string[] | null;
+  link: { url: string; label: string } | null;
+  startsAt: string | null;
+  expiresAt: string | null;
+  createdBy: string | null;
+}
+
+/** Resultado de entregar un aviso por un canal (Firebase...). */
+export interface NotificationDeliveredEventData {
+  notificationId: string;
+  channel: string;
+  tenants: number;
+  devices: number;
+  sent: number;
+  failed: number;
+  removedTokens: number;
+}
+
+/** Factura en los eventos `billing.*` (montos en centavos, fechas en ISO 8601). */
+export interface InvoiceEventData {
+  id: string;
+  tenantId: string;
+  description: string;
+  currency: string;
+  amountCents: number;
+  paidCents: number;
+  status: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  dueAt: string;
+  paidAt: string | null;
+}
+
+export interface SubscriptionEventData {
+  tenantId: string;
+  plan: string | null;
+  period: string;
+  status: string;
+  currency: string;
+  amountCents: number;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  provider: string;
+}
+
 export interface TenancyLifecycleEventData {
   tenantId: string;
 }
@@ -69,6 +133,7 @@ export interface TenancyEventMap {
   'tenant.creating': TenantEventData;
   'tenant.created': TenantEventData;
   'tenant.updated': TenantUpdatedEventData;
+  'tenant.plan_changed': TenantPlanChangedEventData;
   'tenant.deleted': TenantEventData;
   'tenant.suspended': TenantEventData;
   'tenant.activated': TenantEventData;
@@ -84,6 +149,20 @@ export interface TenancyEventMap {
   'database.deleted': DatabaseEventData;
   'database.moved': DatabaseMovedEventData;
   'theme.updated': ThemeUpdatedEventData;
+  'notification.sent': NotificationSentEventData;
+  'notification.delivered': NotificationDeliveredEventData;
+  'billing.subscription_updated': SubscriptionEventData;
+  'billing.subscription_past_due': SubscriptionEventData & { invoiceId: string };
+  'billing.invoice_created': InvoiceEventData;
+  'billing.invoice_paid': InvoiceEventData;
+  'billing.payment_recorded': InvoiceEventData & {
+    paymentId: string;
+    paymentCents: number;
+    method: string;
+    reference: string | null;
+  };
+  'billing.payment_failed': InvoiceEventData & { provider: string; reason: string | null };
+  'billing.tenant_suspended': { tenantId: string; invoiceId: string };
   'tenancy.initialized': TenancyLifecycleEventData;
   'tenancy.ended': TenancyLifecycleEventData;
 }
@@ -123,6 +202,15 @@ export const TenancyEvents = {
   },
   tenantUpdated(tenant: Tenant, changes: string[]) {
     return event('tenant.updated', tenant.id.value, { ...tenantEventData(tenant), changes });
+  },
+  planChanged(tenant: Tenant, previousPlan: string | null, resolved: ResolvedFeatures) {
+    return event('tenant.plan_changed', tenant.id.value, {
+      ...tenantEventData(tenant),
+      previousPlan,
+      overrides: tenant.features ? structuredClone(tenant.features) : null,
+      features: [...resolved.features],
+      limits: { ...resolved.limits },
+    });
   },
   tenantMaintenance(tenant: Tenant) {
     return event('tenant.maintenance', tenant.id.value, {

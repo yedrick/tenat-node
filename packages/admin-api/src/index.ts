@@ -1,5 +1,14 @@
 export { createAdminApi, serveAdmin, type AdminApi, type ServeAdminOptions } from './admin.js';
+export {
+  Leads,
+  LEAD_STATUSES,
+  type Lead,
+  type LeadChanges,
+  type LeadStatus,
+  type NewLead,
+} from './leads.js';
 export type {
+  LeadsOptions,
   AdminOptions,
   AdminContext,
   AdminTenancy,

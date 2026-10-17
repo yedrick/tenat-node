@@ -4,6 +4,8 @@ export interface TenantListQuery {
   status?: TenantStatus | readonly TenantStatus[];
   /** Busca por coincidencia parcial en id o nombre (sin distinguir mayúsculas). */
   search?: string;
+  /** Solo los tenants de este plan (`null` = sin plan). */
+  plan?: string | null;
   /** Página, empezando en 1. */
   page?: number;
   perPage?: number;

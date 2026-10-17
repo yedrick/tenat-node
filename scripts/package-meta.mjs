@@ -30,6 +30,7 @@ const KEYWORDS = {
   'queue-': ['queue', 'jobs'],
   'storage-': ['storage', 's3'],
   outbox: ['outbox', 'events'],
+  'notify-': ['notifications', 'push'],
   'transport-': ['events', 'cloudevents'],
   testing: ['testing'],
 };

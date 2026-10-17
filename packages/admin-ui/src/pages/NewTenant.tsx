@@ -1,11 +1,33 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { followProgress, post, type ProgressEvent } from '../api';
+import { followProgress, patch, post, type ProgressEvent } from '../api';
 import { useAuth } from '../auth';
-import { DataEditor, dataFromRows, type DataRow } from '../components/DataEditor';
-import { Button, ErrorBox, Field, Input, Modal, StepBadge } from '../components/ui';
-import type { TenantField } from '../types';
+import { DataEditor, dataFromRows, rowsFromData, type DataRow } from '../components/DataEditor';
+import {
+  Button,
+  ErrorBox,
+  Field,
+  Input,
+  Modal,
+  Select,
+  StepBadge,
+  useToast,
+} from '../components/ui';
+import { usePlans } from '../plans';
+import type { Lead, TenantField } from '../types';
 import { navigate } from '../router';
+
+/** Valores iniciales (por ejemplo, desde una solicitud de la web comercial). */
+export interface NewTenantInitial {
+  id?: string;
+  name?: string;
+  plan?: string;
+  /** Datos libres de `tenant.data`. */
+  data?: Record<string, string>;
+  /** Para los campos declarados de tipo `email` y `tel`. */
+  email?: string | null;
+  phone?: string | null;
+}
 
 interface StepState {
   step: string;
@@ -28,9 +50,26 @@ function fieldValue(field: TenantField, raw: string): unknown {
   return field.type === 'number' ? Number(raw) : raw.trim();
 }
 
-export function NewTenant({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function NewTenant({
+  open,
+  onClose,
+  initial,
+  leadId,
+  onConverted,
+}: {
+  open: boolean;
+  onClose: () => void;
+  initial?: NewTenantInitial;
+  /** Solicitud de la que sale el tenant: al crearlo queda como convertida. */
+  leadId?: number;
+  /** La solicitud quedó convertida (con el tenant creado). */
+  onConverted?: (lead: Lead) => void;
+}) {
   const client = useQueryClient();
+  const toast = useToast();
   const { session } = useAuth();
+  const plans = usePlans(open);
+  const planOptions = plans.data?.enabled ? plans.data : undefined;
   const fields = session?.config?.tenantFields ?? [];
   const central = session?.config?.centralDomains[0] ?? 'tuapp.com';
   const [form, setForm] = useState({ id: '', name: '', domain: '', plan: '' });
@@ -44,6 +83,28 @@ export function NewTenant({ open, onClose }: { open: boolean; onClose: () => voi
   const stop = useRef<(() => void) | null>(null);
 
   useEffect(() => () => stop.current?.(), []);
+  // Al abrir con valores iniciales (desde una solicitud), se cargan en el formulario.
+  useEffect(() => {
+    if (!open || !initial) return;
+    setForm({
+      id: initial.id ?? '',
+      name: initial.name ?? '',
+      domain: '',
+      plan: initial.plan ?? '',
+    });
+    const prefilled: Record<string, string> = {};
+    const used = new Set<string>();
+    for (const field of fields) {
+      const value =
+        field.type === 'email' ? initial.email : field.type === 'tel' ? initial.phone : null;
+      if (value) prefilled[field.key] = value;
+    }
+    // Lo que ya va en un campo declarado no se repite en los datos libres.
+    for (const [key, value] of Object.entries(initial.data ?? {}))
+      if (Object.values(prefilled).includes(value)) used.add(key);
+    setDeclared(prefilled);
+    setExtra(rowsFromData(initial.data ?? {}, used));
+  }, [open]);
   const reset = () => {
     stop.current?.();
     setForm({ id: '', name: '', domain: '', plan: '' });
@@ -82,6 +143,17 @@ export function NewTenant({ open, onClose }: { open: boolean; onClose: () => voi
       });
       const id = form.id.trim();
       setCreatingId(id);
+      if (leadId !== undefined) {
+        try {
+          onConverted?.(await patch(`/leads/${leadId}`, { status: 'converted', tenantId: id }));
+          void client.invalidateQueries({ queryKey: ['leads'] });
+        } catch (e) {
+          toast(
+            `El tenant se crea, pero la solicitud no se marcó como convertida: ${e instanceof Error ? e.message : String(e)}`,
+            'error',
+          );
+        }
+      }
       // Progreso en vivo (SSE): un paso a la vez hasta 'done'
       stop.current = followProgress(id, (e: ProgressEvent) => {
         if (e.event === 'step') {
@@ -158,13 +230,30 @@ export function NewTenant({ open, onClose }: { open: boolean; onClose: () => voi
             )}
           </Field>
           <Field label="Plan">
-            {(id) => (
-              <Input
-                id={id}
-                value={form.plan}
-                onChange={(e) => setForm({ ...form, plan: e.target.value })}
-              />
-            )}
+            {(id) =>
+              planOptions ? (
+                <Select
+                  id={id}
+                  value={form.plan}
+                  onChange={(e) => setForm({ ...form, plan: e.target.value })}
+                  options={[
+                    [
+                      '',
+                      planOptions.defaultPlan
+                        ? `Sin plan (usa ${planOptions.plans.find((p) => p.id === planOptions.defaultPlan)?.label ?? planOptions.defaultPlan})`
+                        : 'Sin plan',
+                    ],
+                    ...planOptions.plans.map((p) => [p.id, p.label] as [string, string]),
+                  ]}
+                />
+              ) : (
+                <Input
+                  id={id}
+                  value={form.plan}
+                  onChange={(e) => setForm({ ...form, plan: e.target.value })}
+                />
+              )
+            }
           </Field>
           {fields.map((field) => (
             <Field key={field.key} label={field.label} hint={field.hint}>

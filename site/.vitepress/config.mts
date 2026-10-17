@@ -31,6 +31,9 @@ const guide: DefaultTheme.SidebarItem[] = [
     items: [
       { text: 'Caché, archivos y colas', link: '/guia/cache-archivos-colas' },
       { text: 'Tema', link: '/guia/tema' },
+      { text: 'Planes y módulos', link: '/guia/planes' },
+      { text: 'Avisos y push', link: '/guia/avisos' },
+      { text: 'Cobros', link: '/guia/cobros' },
       { text: 'Eventos', link: '/guia/eventos' },
     ],
   },
@@ -69,7 +72,7 @@ export default defineConfig({
       { text: 'Guía', link: '/guia/introduccion', activeMatch: '/guia/' },
       { text: 'Referencia', link: '/referencia/api/', activeMatch: '/referencia/' },
       { text: 'Decisiones', link: '/adr/', activeMatch: '/adr/' },
-      { text: 'v0.8', items: [{ text: 'Hoja de ruta', link: '/hoja-de-ruta' }, { text: 'npm', link: 'https://www.npmjs.com/org/tenancy-node' }] },
+      { text: 'v0.11', items: [{ text: 'Hoja de ruta', link: '/hoja-de-ruta' }, { text: 'npm', link: 'https://www.npmjs.com/org/tenancy-node' }] },
     ],
     sidebar: {
       '/guia/': guide,

@@ -1,6 +1,7 @@
 import type { Tenant } from './domain/index.js';
 import type { Observer } from './observability/observer.js';
 import type {
+  BillingRepository,
   Bootstrapper,
   Clock,
   DomainRepository,
@@ -9,6 +10,7 @@ import type {
   EventTransport,
   IdGenerator,
   Logger,
+  NotificationRepository,
   ProvisioningPipeline,
   TenantRepository,
 } from './ports/index.js';
@@ -31,6 +33,10 @@ export interface PluginSetupContext {
 export interface PluginContribution {
   tenants?: TenantRepository;
   domains?: DomainRepository;
+  /** Cobros (`tenancy.billing`). */
+  billing?: BillingRepository;
+  /** Avisos de la plataforma (`tenancy.notifications`). */
+  notifications?: NotificationRepository;
   provisioning?: ProvisioningPipeline;
   bootstrappers?: readonly Bootstrapper[];
   /** Transportes de eventos (webhook, RabbitMQ...) que `tenancy.events.forward` puede usar. */

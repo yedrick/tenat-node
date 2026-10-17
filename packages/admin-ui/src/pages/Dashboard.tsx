@@ -7,7 +7,10 @@ import {
   IconBuilding,
   IconCheck,
   IconDatabase,
+  IconInbox,
+  IconLayers,
   IconSparkles,
+  IconWallet,
 } from '../components/icons';
 import {
   Badge,
@@ -19,7 +22,10 @@ import {
   Spinner,
   cx,
 } from '../components/ui';
-import { navigate } from '../router';
+import { useAuth } from '../auth';
+import { planLabel, usePlans } from '../plans';
+import { Link, navigate } from '../router';
+import type { InvoicesPage } from '../types';
 
 interface Metrics {
   tenants: { byStatus: Record<string, number>; createdLast30Days: number };
@@ -35,6 +41,10 @@ interface Metrics {
     lastErrorAt: string | null;
   }[];
   outbox: { pending: number; processing: number; published: number; failed: number } | null;
+  /** Tenants por plan (`''` = sin plan); `null` sin planes configurados. Falta antes de 0.11. */
+  plans?: Record<string, number> | null;
+  /** Solicitudes de la web comercial por estado. Falta antes de 0.11. */
+  leads?: Record<string, number>;
 }
 
 type StatTone = 'brand' | 'ok' | 'info' | 'warn' | 'danger';
@@ -83,6 +93,7 @@ function Stat({
 }
 
 export function Dashboard() {
+  const { can } = useAuth();
   const metrics = useQuery({
     queryKey: ['metrics'],
     queryFn: () => get<Metrics>('/metrics'),
@@ -99,6 +110,7 @@ export function Dashboard() {
   const s = m.tenants.byStatus;
   const total = Object.values(s).reduce((a, b) => a + b, 0);
   const paused = (s.suspended ?? 0) + (s.maintenance ?? 0);
+  const newLeads = m.leads?.new ?? 0;
   return (
     <>
       <PageHeader
@@ -134,6 +146,40 @@ export function Dashboard() {
           alert={(s.failed ?? 0) > 0}
         />
       </div>
+      {(m.plans || m.leads || can('billing:read')) && (
+        <div className="mt-6 grid gap-6 md:grid-cols-2">
+          {m.plans && <TenantsByPlan counts={m.plans} />}
+          {m.leads && can('leads:read') && (
+            <Card
+              title="Solicitudes nuevas"
+              description="Pedidos de demo de la web comercial sin atender."
+              actions={
+                <Link to="/leads" className="text-sm font-medium text-brand hover:underline">
+                  Ver solicitudes →
+                </Link>
+              }
+            >
+              <div className="flex items-center gap-4">
+                <span
+                  className={cx(
+                    'flex h-12 w-12 items-center justify-center rounded-xl',
+                    newLeads > 0 ? 'bg-info/10 text-info' : 'bg-subtle text-muted',
+                  )}
+                >
+                  <IconInbox width={22} height={22} />
+                </span>
+                <div>
+                  <p className="text-3xl font-semibold tabular-nums">{newLeads}</p>
+                  <p className="text-xs text-muted">
+                    {m.leads.contacted ?? 0} contactadas · {m.leads.converted ?? 0} convertidas
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+          {can('billing:read') && <BillingCard />}
+        </div>
+      )}
       <div className="mt-6 grid gap-6 md:grid-cols-2">
         <Card title="Servicios" description="Lo mismo que responde /health.">
           <ul className="divide-y divide-line text-sm">
@@ -222,5 +268,97 @@ export function Dashboard() {
         />
       </Card>
     </>
+  );
+}
+
+function TenantsByPlan({ counts }: { counts: Record<string, number> }) {
+  const plans = usePlans();
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  // En el orden de la configuración; los que no están (sin plan, planes viejos) al final.
+  const order = plans.data?.plans.map((p) => p.id) ?? [];
+  const entries = Object.entries(counts).sort(
+    ([a], [b]) =>
+      (order.indexOf(a) === -1 ? 999 : order.indexOf(a)) -
+      (order.indexOf(b) === -1 ? 999 : order.indexOf(b)),
+  );
+  return (
+    <Card
+      title="Tenants por plan"
+      actions={
+        <Link to="/plans" className="text-sm font-medium text-brand hover:underline">
+          Ver planes →
+        </Link>
+      }
+    >
+      {entries.length === 0 ? (
+        <p className="text-sm text-muted">Todavía no hay tenants.</p>
+      ) : (
+        <ul className="space-y-2.5 text-sm">
+          {entries.map(([plan, n]) => (
+            <li key={plan}>
+              <Link
+                to={`/tenants?plan=${encodeURIComponent(plan)}`}
+                className="flex items-center justify-between gap-2 hover:text-brand"
+              >
+                <span className="flex items-center gap-2">
+                  <IconLayers className="text-muted" />
+                  {plan === ''
+                    ? `Sin plan${plans.data?.defaultPlan ? ` (usa ${planLabel(plans.data, plans.data.defaultPlan)})` : ''}`
+                    : planLabel(plans.data, plan)}
+                </span>
+                <span className="tabular-nums text-muted">{n}</span>
+              </Link>
+              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-subtle">
+                <div
+                  className="h-full rounded-full bg-brand"
+                  style={{ width: `${total ? Math.round((n / total) * 100) : 0}%` }}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** Facturas abiertas, vencidas y suscripciones en mora. */
+function BillingCard() {
+  const billing = useQuery({
+    queryKey: ['billing', 'summary'],
+    queryFn: () => get<InvoicesPage>('/billing/invoices?perPage=1'),
+    refetchInterval: 60_000,
+  });
+  const summary = billing.data?.summary;
+  const overdue = (summary?.overdue ?? 0) + (summary?.pastDueSubscriptions ?? 0);
+  return (
+    <Card
+      title="Cobros"
+      description="Facturas de los tenants."
+      actions={
+        <Link to="/billing" className="text-sm font-medium text-brand hover:underline">
+          Ver cobros →
+        </Link>
+      }
+    >
+      <ErrorBox error={billing.error} />
+      <div className="flex items-center gap-4">
+        <span
+          className={cx(
+            'flex h-12 w-12 items-center justify-center rounded-xl',
+            overdue > 0 ? 'bg-danger/10 text-danger' : 'bg-subtle text-muted',
+          )}
+        >
+          <IconWallet width={22} height={22} />
+        </span>
+        <div>
+          <p className="text-3xl font-semibold tabular-nums">{summary?.open ?? '—'}</p>
+          <p className="text-xs text-muted">
+            abiertas · {summary?.overdue ?? 0} vencidas · {summary?.pastDueSubscriptions ?? 0} en
+            mora
+          </p>
+        </div>
+      </div>
+    </Card>
   );
 }

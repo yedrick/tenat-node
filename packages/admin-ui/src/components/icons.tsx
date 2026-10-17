@@ -104,3 +104,22 @@ export const IconUser = icon([
   'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2',
   'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
 ]);
+export const IconLayers = icon(['m12 2 10 5-10 5L2 7z', 'm2 17 10 5 10-5', 'm2 12 10 5 10-5']);
+export const IconInbox = icon([
+  'M22 12h-6l-2 3h-4l-2-3H2',
+  'M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
+]);
+export const IconTrash = icon([
+  'M3 6h18',
+  'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6',
+  'M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+]);
+export const IconBell = icon([
+  'M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9',
+  'M10.3 21a1.94 1.94 0 0 0 3.4 0',
+]);
+export const IconWallet = icon([
+  'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1',
+  'M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4',
+]);
+export const IconSend = icon(['m22 2-7 20-4-9-9-4z', 'M22 2 11 13']);

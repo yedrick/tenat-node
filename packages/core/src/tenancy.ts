@@ -27,9 +27,20 @@ import { createFrame, TenancyContext, type ContextFrame } from './context/tenanc
 import { TenantScope } from './context/tenant-scope.js';
 import type { Tenant } from './domain/index.js';
 import {
+  FeatureNotInPlanError,
+  FontCatalog,
+  PlanCatalog,
+  PlanLimitReachedError,
   TenancyEvents,
   TenantNotIdentifiedError,
   Theme,
+  type FeatureInfo,
+  type FeatureName,
+  type LimitName,
+  type PublicPlan,
+  type ResolvedFeatures,
+  type ResolvedFont,
+  type TenantFeatureOverrides,
   type Domain,
   type TenancyEventMap,
   type TenantChanges,
@@ -38,6 +49,13 @@ import {
   type ThemeProps,
 } from './domain/index.js';
 import { InProcessEventBus } from './events/in-process-event-bus.js';
+import { InMemoryNotificationRepository } from './infrastructure/memory/in-memory-notification-repository.js';
+import { InMemoryBillingRepository } from './infrastructure/memory/in-memory-billing-repository.js';
+import { createBillingService, type BillingApi } from './billing/billing-service.js';
+import {
+  createNotificationService,
+  type NotificationsApi,
+} from './notifications/notification-service.js';
 import { httpStatusFor } from './http/http.js';
 import {
   CachedDomainRepository,
@@ -145,6 +163,52 @@ export interface ThemeApi {
   /** Vuelve al tema por defecto. */
   reset(tenant: TenantRef): Promise<Theme>;
   readonly defaults: Theme;
+  /** Fuentes permitidas (`theme.fonts`), con la URL de su CSS. Vacío = cualquier nombre. */
+  fonts(): ResolvedFont[];
+}
+
+/**
+ * Módulos y límites del plan. Sin `tenant`, usan el del contexto actual (y lanzan
+ * `TenantNotIdentifiedError` en el contexto central).
+ */
+export interface FeaturesApi {
+  /** `false` sin `plans` en la configuración: entonces todo tenant tiene todos los módulos. */
+  readonly enabled: boolean;
+  /** ¿El plan del tenant (más sus módulos sueltos) incluye el módulo? */
+  has(feature: FeatureName, tenant?: Tenant): boolean;
+  /** Lanza `FeatureNotInPlanError` (403) si falta alguno de los módulos. */
+  require(feature: FeatureName | readonly FeatureName[], tenant?: Tenant): void;
+  /** Módulos efectivos, en el orden del catálogo. */
+  list(tenant?: Tenant): string[];
+  /** Límite efectivo (`null` = sin límite). */
+  limit(name: LimitName, tenant?: Tenant): number | null;
+  /** Cuántos quedan antes del límite (`null` = sin límite). */
+  remaining(name: LimitName, current: number, tenant?: Tenant): number | null;
+  /**
+   * Antes de crear uno más: lanza `PlanLimitReachedError` (403) si `current` ya llegó al límite.
+   * `current` lo cuenta tu app (la librería no conoce tus tablas).
+   */
+  assertLimit(name: LimitName, current: number, tenant?: Tenant): void;
+  /** Plan, módulos y límites efectivos. */
+  of(tenant?: Tenant): ResolvedFeatures;
+  /** Catálogo de módulos de la configuración. */
+  catalog(): FeatureInfo[];
+}
+
+export interface PlansApi {
+  /** Planes en el orden de la configuración. */
+  list(options?: { publicOnly?: boolean }): PublicPlan[];
+  get(id: string): PublicPlan | undefined;
+  readonly defaultPlan: string | null;
+  /**
+   * Cambia el plan de un tenant y, si se pasan, sus módulos sueltos y límites propios
+   * (reemplazan los anteriores). Publica `tenant.plan_changed`.
+   */
+  assign(
+    tenant: TenantRef,
+    plan: string | null,
+    overrides?: TenantFeatureOverrides | null,
+  ): Promise<Tenant>;
 }
 
 type EventName = keyof TenancyEventMap;
@@ -270,6 +334,12 @@ export class Tenancy {
   readonly events: EventsApi;
   readonly observability: ObservabilityApi;
   readonly jobs: JobsApi;
+  readonly features: FeaturesApi;
+  readonly plans: PlansApi;
+  /** Avisos de la plataforma a sus tenants, con canales de entrega (Firebase...). */
+  readonly notifications: NotificationsApi;
+  /** Cobros a los tenants: suscripción, facturas, pagos y pasarelas. */
+  readonly billing: BillingApi;
   /** Rutas HTTP opcionales (`/tenancy/me`, `theme.css`, `assets`, `health`). Las usan los adaptadores. */
   readonly http: TenancyHttpRoutes;
   readonly centralDomains: readonly string[];
@@ -281,7 +351,10 @@ export class Tenancy {
   private readonly observer: Observer;
   private readonly tenantRepo: TenantRepository;
   private readonly resolveUseCase: ResolveTenantUseCase;
-  private readonly renderer = new ThemeRenderer();
+  private readonly renderer: ThemeRenderer;
+  private readonly catalog: PlanCatalog;
+  private readonly fontCatalog: FontCatalog;
+  private readonly warnedPlans = new Set<string>();
   private readonly defaultTheme: Theme;
   private readonly logger: Logger;
   private readonly cacheStore: CacheStore;
@@ -316,7 +389,14 @@ export class Tenancy {
         ? (config.telemetry as readonly Telemetry[])
         : [config.telemetry as Telemetry]
       : [];
-    this.observer = new Observer({ logger: this.logger, tracker, ids, clock, currentTenantId, telemetry });
+    this.observer = new Observer({
+      logger: this.logger,
+      tracker,
+      ids,
+      clock,
+      currentTenantId,
+      telemetry,
+    });
 
     this.bus = new InProcessEventBus({
       ids,
@@ -345,7 +425,9 @@ export class Tenancy {
     const lookup = config.lookupCache;
     const rawTenants = config.tenants ?? contributed.tenants ?? new InMemoryTenantRepository();
     const rawDomains = config.domains ?? contributed.domains ?? new InMemoryDomainRepository();
-    const forward = config.invalidation ? this.setupInvalidation(config.invalidation, ids) : undefined;
+    const forward = config.invalidation
+      ? this.setupInvalidation(config.invalidation, ids)
+      : undefined;
     const cachedTenants =
       lookup === false ? undefined : new CachedTenantRepository(rawTenants, lookup ?? {}, forward);
     const cachedDomains =
@@ -393,6 +475,22 @@ export class Tenancy {
 
     const themeDefaults: ThemeProps = { ...DEFAULT_THEME, ...config.theme?.defaults };
     this.defaultTheme = Theme.create(themeDefaults);
+    this.fontCatalog = new FontCatalog(config.theme?.fonts ?? []);
+    if (
+      themeDefaults.font !== undefined &&
+      this.fontCatalog.restricted &&
+      !this.fontCatalog.get(themeDefaults.font)
+    )
+      throw new InvalidConfigError(
+        `theme.defaults.font "${themeDefaults.font}" is not in theme.fonts`,
+      );
+    this.renderer = new ThemeRenderer(this.fontCatalog);
+    this.catalog = new PlanCatalog({
+      ...(config.features ? { features: config.features } : {}),
+      ...(config.plans ? { plans: config.plans } : {}),
+      ...(config.defaultPlan !== undefined ? { defaultPlan: config.defaultPlan } : {}),
+    });
+    const catalog = this.catalog;
 
     const resolver =
       typeof config.resolver === 'string'
@@ -414,11 +512,13 @@ export class Tenancy {
       bus,
       clock,
       themeDefaults,
+      catalog,
+      this.fontCatalog,
     );
     const retryProvisioning = new RetryProvisioningUseCase(repo, provisioning, bus, clock);
     const findTenant = new FindTenantUseCase(repo);
     const listTenants = new ListTenantsUseCase(repo);
-    const updateTenant = new UpdateTenantUseCase(repo, bus, clock);
+    const updateTenant = new UpdateTenantUseCase(repo, bus, clock, catalog);
     const suspendTenant = new SuspendTenantUseCase(repo, bus, clock);
     const activateTenant = new ActivateTenantUseCase(repo, bus, clock);
     const maintenance = new PutTenantInMaintenanceUseCase(repo, bus, clock);
@@ -427,7 +527,7 @@ export class Tenancy {
     const removeDomain = new RemoveDomainUseCase(domainRepo, bus, clock);
     const setPrimary = new SetPrimaryDomainUseCase(domainRepo, bus, clock);
     const listDomains = new ListDomainsUseCase(repo, domainRepo);
-    const updateTheme = new UpdateThemeUseCase(repo, bus, clock, themeDefaults);
+    const updateTheme = new UpdateThemeUseCase(repo, bus, clock, themeDefaults, this.fontCatalog);
 
     // Cada operación queda en el log con tenantId, duración y resultado.
     const write = <T>(operation: string, ref: TenantRef | undefined, fn: () => Promise<T>) =>
@@ -499,7 +599,66 @@ export class Tenancy {
           true,
         ),
       defaults: this.defaultTheme,
+      fonts: () => this.fontCatalog.list(),
     });
+
+    const resolveFeatures = (tenant?: Tenant): ResolvedFeatures => {
+      const target = tenant ?? this.currentOrFail();
+      const resolved = catalog.resolve(target.plan, target.features);
+      if (!resolved.knownPlan && resolved.plan !== null && !this.warnedPlans.has(resolved.plan)) {
+        this.warnedPlans.add(resolved.plan);
+        this.logger.warn(
+          { tenantId: target.id.value, operation: 'features.resolve', plan: resolved.plan },
+          `Tenant "${target.id.value}" has plan "${resolved.plan}", which is not configured: it gets no plan features`,
+        );
+      }
+      return resolved;
+    };
+    const limitOf = (name: string, tenant?: Tenant) => {
+      const value = resolveFeatures(tenant).limits[name];
+      return value === undefined ? null : value;
+    };
+    this.features = {
+      enabled: catalog.enabled,
+      has: (feature, tenant) =>
+        !catalog.enabled || resolveFeatures(tenant).features.includes(feature),
+      require: (feature, tenant) => {
+        if (!catalog.enabled) return;
+        const resolved = resolveFeatures(tenant);
+        const target = tenant ?? this.currentOrFail();
+        for (const f of ([] as string[]).concat(feature as string | string[])) {
+          if (!resolved.features.includes(f))
+            throw new FeatureNotInPlanError(target.id.value, f, resolved.plan);
+        }
+      },
+      list: (tenant) => resolveFeatures(tenant).features,
+      limit: (name, tenant) => limitOf(name, tenant),
+      remaining: (name, current, tenant) => {
+        const max = limitOf(name, tenant);
+        return max === null ? null : Math.max(0, max - current);
+      },
+      assertLimit: (name, current, tenant) => {
+        const resolved = resolveFeatures(tenant);
+        const max = resolved.limits[name];
+        if (max === undefined || max === null || current < max) return;
+        const target = tenant ?? this.currentOrFail();
+        throw new PlanLimitReachedError(target.id.value, name, max, resolved.plan);
+      },
+      of: (tenant) => resolveFeatures(tenant),
+      catalog: () => catalog.features(),
+    };
+    this.plans = {
+      list: (options) => catalog.plans(options),
+      get: (id) => catalog.plan(id),
+      defaultPlan: catalog.defaultPlan,
+      assign: (ref, plan, overrides) =>
+        write('plans.assign', ref, () =>
+          updateTenant.execute(ref, {
+            plan,
+            ...(overrides !== undefined ? { features: overrides } : {}),
+          }),
+        ),
+    };
 
     const queueListenerCount = new Map<string, number>();
     const eventSchemas = new Map<string, v.GenericSchema>();
@@ -603,6 +762,63 @@ export class Tenancy {
       names: () => [...this.jobHandlers.keys()],
     };
 
+    const notifyConfig = config.notifications ?? {};
+    const deliveryJob = 'tenancy:notifications.deliver';
+    this.notifications = createNotificationService({
+      repository:
+        notifyConfig.repository ?? contributed.notifications ?? new InMemoryNotificationRepository(),
+      tenants: this.tenantRepo,
+      channels: notifyConfig.channels ?? [],
+      clock,
+      ids,
+      planOf: (tenant) => catalog.resolve(tenant.plan, tenant.features).plan,
+      current: () => this.currentOrFail(),
+      publish: (type, data) => this.central(() => bus.publish({ type, data } as never)),
+      schedule: async (id) => {
+        if (notifyConfig.delivery === 'queue') {
+          await this.central(() => this.jobs.dispatch(deliveryJob, { id }));
+          return;
+        }
+        // En segundo plano: `send` no espera a Firebase. Los errores quedan en el registro.
+        setImmediate(() => {
+          void this.observer
+            .trace('notifications.deliver', { notificationId: id }, () =>
+              this.notifications.deliver(id),
+            )
+            .catch(() => undefined);
+        });
+      },
+      report: (error, context) => this.observer.reportError('notifications.channel', error, context),
+      cacheTtlMs: notifyConfig.cacheTtlMs ?? 15_000,
+    });
+    if (notifyConfig.delivery === 'queue' && (notifyConfig.channels ?? []).length > 0) {
+      this.jobs.define<{ id: string }>(
+        deliveryJob,
+        async ({ id }) => void (await this.notifications.deliver(id)),
+        { attempts: 3, backoff: { type: 'exponential', delayMs: 5000 } },
+      );
+    }
+
+    const billingConfig = config.billing ?? {};
+    for (const p of billingConfig.providers ?? [])
+      if (p.name === 'manual') throw new InvalidConfigError('billing: "manual" is a reserved provider name');
+    this.billing = createBillingService({
+      repository: billingConfig.repository ?? contributed.billing ?? new InMemoryBillingRepository(),
+      providers: billingConfig.providers ?? [],
+      clock,
+      ids,
+      currency: billingConfig.currency ?? 'USD',
+      dueDays: billingConfig.dueDays ?? 7,
+      invoiceDaysBefore: billingConfig.invoiceDaysBefore ?? 7,
+      suspendAfterDays: billingConfig.suspendAfterDays ?? null,
+      findTenant: (id) => this.tenants.findOrFail(id),
+      plan: (id) => catalog.plan(id),
+      assignPlan: (id, plan) => this.plans.assign(id, plan),
+      suspend: async (id) => void (await this.tenants.suspend(id)),
+      activate: async (id) => void (await this.tenants.activate(id)),
+      publish: (type, data) => this.central(() => bus.publish({ type, data } as never)),
+    });
+
     // Al borrar un tenant, su caché ya no sirve.
     bus.on(
       'tenant.deleted',
@@ -639,6 +855,14 @@ export class Tenancy {
         storage: () => this.storage(),
         health: () => this.health(),
         storageDriverName: () => this.storageDriver.name,
+        features: (tenant) => (catalog.enabled ? this.features.of(tenant) : undefined),
+        notifications: async (tenant) =>
+          (await this.notifications.forTenant({ tenant })).map(({ read: _read, roles: _roles, audience: _a, createdBy: _c, ...n }) => n),
+        plans: () => ({
+          plans: catalog.plans({ publicOnly: true }),
+          features: catalog.features(),
+          defaultPlan: catalog.defaultPlan,
+        }),
       },
       config.http ?? {},
       config.publicFields ?? ['name'],
@@ -1030,10 +1254,18 @@ export class Tenancy {
     } = {
       bootstrappers: [],
     };
-    const owners: Partial<Record<'tenants' | 'domains' | 'provisioning', string>> = {};
+    const owners: Partial<
+      Record<'tenants' | 'domains' | 'provisioning' | 'notifications' | 'billing', string>
+    > = {};
     for (const plugin of plugins) {
       const contribution = plugin.setup(context);
-      for (const key of ['tenants', 'domains', 'provisioning'] as const) {
+      for (const key of [
+        'tenants',
+        'domains',
+        'provisioning',
+        'notifications',
+        'billing',
+      ] as const) {
         if (contribution[key] === undefined) continue;
         if (owners[key]) {
           throw new InvalidConfigError(
@@ -1074,8 +1306,7 @@ export class Tenancy {
   private currentTheme(): CurrentTheme {
     const tenant = this.current();
     const override = this.context.frame()?.resources.get(THEME_OVERRIDE) as
-      | { theme: Theme; version: number }
-      | undefined;
+      { theme: Theme; version: number } | undefined;
     const theme = override?.theme ?? tenant?.theme ?? this.defaultTheme;
     const key = override
       ? `${tenant!.id.value}:override:${override.version}`
