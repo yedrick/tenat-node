@@ -266,6 +266,23 @@ export interface BillingPaymentsTable {
   created_at: Timestamp;
 }
 
+export interface PlanSettingsTable {
+  plan_id: string;
+  settings: Json<unknown>;
+  archived: Bool;
+  updated_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
+export interface PlatformSettingsTable {
+  key: string;
+  value: Json<unknown>;
+  updated_by: string | null;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+}
+
 /** Tablas centrales con nombres cortos; `TablePrefixPlugin` agrega el prefijo. */
 export interface CentralTables {
   database_servers: DatabaseServersTable;
@@ -286,6 +303,8 @@ export interface CentralTables {
   billing_subscriptions: BillingSubscriptionsTable;
   billing_invoices: BillingInvoicesTable;
   billing_payments: BillingPaymentsTable;
+  plan_settings: PlanSettingsTable;
+  platform_settings: PlatformSettingsTable;
 }
 
 /** Todas las tablas que crea `install()` (sin prefijo). */
@@ -308,6 +327,8 @@ export const CENTRAL_TABLES = [
   'billing_subscriptions',
   'billing_invoices',
   'billing_payments',
+  'plan_settings',
+  'platform_settings',
 ] as const;
 
 export type BigIdColumn = BigId;

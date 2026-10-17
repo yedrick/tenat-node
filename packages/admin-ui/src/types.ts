@@ -106,6 +106,41 @@ export interface PlanInfo {
   public: boolean;
   /** Tenants con este plan (incluye los sin plan si es el plan por defecto). */
   tenants: number;
+  /** `config`: definido en el código; `panel`: creado desde el panel. */
+  source?: 'config' | 'panel';
+  /** Plan de la configuración con cambios guardados desde el panel. */
+  customized?: boolean;
+  /** Plan creado en el panel y archivado. */
+  archived?: boolean;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
+}
+
+/** Cuerpo de `POST /plans` y `PATCH /plans/:id` (en PATCH, solo lo que cambia). */
+export interface PlanInput {
+  id?: string;
+  label?: string;
+  description?: string | null;
+  price?: PlanPrice | null;
+  features?: string[] | '*';
+  limits?: Record<string, number | null>;
+  public?: boolean;
+  highlight?: boolean;
+}
+
+/** `GET /platform`: marca y contacto de la plataforma. */
+export interface PlatformInfo {
+  name: string | null;
+  logo: string | null;
+  favicon: string | null;
+  primary: string | null;
+  contact: { whatsapp: string | null; email: string | null };
+  /** Correos que reciben los avisos de ventas (privados: no salen en la web). */
+  salesNotifyTo: string[];
+  logoUrl: string | null;
+  faviconUrl: string | null;
+  updatedAt: string | null;
+  updatedBy: string | null;
 }
 
 /** `GET /plans` */

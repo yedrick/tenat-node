@@ -49,6 +49,18 @@ export type {
   RegisterDeviceInput,
   TenantNotification,
 } from './notifications/notification-service.js';
+// Planes editables y marca de la plataforma
+export type {
+  PlanInput,
+  PlansAdminApi,
+  PlatformApi,
+  PlatformInfo,
+  PublicPlatform,
+} from './settings/settings-service.js';
+export {
+  InMemoryPlanSettingsRepository,
+  InMemoryPlatformSettingsRepository,
+} from './infrastructure/memory/in-memory-settings-repositories.js';
 // Cobros
 export type {
   BillingApi,

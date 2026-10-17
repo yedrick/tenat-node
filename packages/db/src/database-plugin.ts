@@ -42,6 +42,10 @@ import { KyselyTenantRepository } from './repositories/kysely-tenant-repository.
 import { KyselyNotificationRepository } from './repositories/kysely-notification-repository.js';
 import { KyselyBillingRepository } from './repositories/kysely-billing-repository.js';
 import {
+  KyselyPlanSettingsRepository,
+  KyselyPlatformSettingsRepository,
+} from './repositories/kysely-settings-repositories.js';
+import {
   ProvisioningStepRepository,
   type ProvisioningStepRecord,
 } from './repositories/provisioning-step-repository.js';
@@ -373,6 +377,8 @@ export function database(options: DatabasePluginOptions): TenancyPlugin<Database
         domains: new KyselyDomainRepository(central),
         notifications: new KyselyNotificationRepository(central),
         billing: new KyselyBillingRepository(central),
+        planSettings: new KyselyPlanSettingsRepository(central),
+        platformSettings: new KyselyPlatformSettingsRepository(central),
         provisioning,
         bootstrappers: [new DatabaseBootstrapper(connections, servers)],
         healthChecks: [

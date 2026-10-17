@@ -1,11 +1,52 @@
-import { IconAlert, IconCheck, IconLayers } from '../components/icons';
-import { Badge, Card, EmptyState, ErrorBox, PageHeader, Spinner, cx } from '../components/ui';
+import { useState } from 'react';
+import { useAuth } from '../auth';
+import {
+  IconAlert,
+  IconArchive,
+  IconCheck,
+  IconLayers,
+  IconPencil,
+  IconPlus,
+  IconUndo,
+} from '../components/icons';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorBox,
+  PageHeader,
+  Spinner,
+  cx,
+  formatDate,
+} from '../components/ui';
 import { formatLimit, formatPrice, limitNames, usePlans } from '../plans';
 import { Link } from '../router';
+import type { PlanInfo } from '../types';
+import { PlanFormModal, PlanRemoveModal } from './PlanForm';
 
-/** Planes de la configuración: precio, módulos, límites y cuántos tenants tiene cada uno. */
+/** Etiquetas de origen y estado de un plan. */
+function PlanBadges({ plan }: { plan: PlanInfo }) {
+  return (
+    <>
+      {plan.source === 'panel' ? (
+        <Badge tone="info">Creado en el panel</Badge>
+      ) : (
+        <Badge tone="neutral">Configuración</Badge>
+      )}
+      {plan.customized && <Badge tone="warn">Modificado</Badge>}
+      {plan.archived && <Badge tone="neutral">Archivado</Badge>}
+    </>
+  );
+}
+
+/** Planes: precio, módulos, límites y tenants de cada uno; se editan sin desplegar. */
 export function Plans() {
   const plans = usePlans();
+  const { can } = useAuth();
+  const canWrite = can('plans:write');
+  const [editing, setEditing] = useState<PlanInfo | 'new' | null>(null);
+  const [removing, setRemoving] = useState<PlanInfo | null>(null);
   if (plans.isLoading)
     return (
       <div className="flex justify-center py-20">
@@ -13,19 +54,37 @@ export function Plans() {
       </div>
     );
   if (plans.error) return <ErrorBox error={plans.error} />;
-  const p = plans.data!;
-  const limits = limitNames(p.plans);
+  const data = plans.data!;
+  const active = data.plans.filter((plan) => !plan.archived);
+  const archived = data.plans.filter((plan) => plan.archived);
+  const p = { ...data, plans: active };
+  const limits = limitNames(active);
   return (
     <>
       <PageHeader
         title="Planes"
-        subtitle="Salen de la configuración de la app (plans y features): para cambiarlos, edítala y vuelve a desplegar."
+        subtitle="Los módulos salen de la configuración de la app; nombres, precios, módulos y límites de cada plan se editan aquí sin desplegar."
+        actions={
+          canWrite && data.features.length > 0 ? (
+            <Button variant="primary" icon={<IconPlus />} onClick={() => setEditing('new')}>
+              Nuevo plan
+            </Button>
+          ) : undefined
+        }
       />
+      {editing && (
+        <PlanFormModal
+          data={data}
+          {...(editing === 'new' ? {} : { plan: editing })}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {removing && <PlanRemoveModal plan={removing} onClose={() => setRemoving(null)} />}
       {!p.enabled && (
         <Card>
           <EmptyState icon={<IconLayers />}>
             El control de módulos está apagado: la configuración no tiene <code>plans</code>, así
-            que todos los tenants tienen todos los módulos.
+            que todos los tenants tienen todos los módulos. Crear un plan lo activa.
           </EmptyState>
         </Card>
       )}
@@ -67,6 +126,7 @@ export function Plans() {
                   {plan.highlight && <Badge tone="info">Destacado</Badge>}
                   {!plan.public && <Badge tone="neutral">Oculto en la web</Badge>}
                   {plan.id === p.defaultPlan && <Badge tone="ok">Por defecto</Badge>}
+                  <PlanBadges plan={plan} />
                 </div>
                 {plan.description && <p className="mt-1 text-sm text-muted">{plan.description}</p>}
                 <p className="mt-3 text-lg font-semibold tabular-nums">{formatPrice(plan.price)}</p>
@@ -85,6 +145,38 @@ export function Plans() {
                 >
                   {plan.tenants} {plan.tenants === 1 ? 'tenant' : 'tenants'} →
                 </Link>
+                {plan.updatedBy && (
+                  <p className="mt-2 text-xs text-muted">
+                    Modificado por {plan.updatedBy} el {formatDate(plan.updatedAt)}
+                  </p>
+                )}
+                {canWrite && (
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-line pt-3">
+                    <Button size="sm" icon={<IconPencil />} onClick={() => setEditing(plan)}>
+                      Editar
+                    </Button>
+                    {plan.customized && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<IconUndo />}
+                        onClick={() => setRemoving(plan)}
+                      >
+                        Restablecer a la configuración
+                      </Button>
+                    )}
+                    {plan.source === 'panel' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        icon={<IconArchive />}
+                        onClick={() => setRemoving(plan)}
+                      >
+                        Archivar
+                      </Button>
+                    )}
+                  </div>
+                )}
               </section>
             ))}
           </div>
@@ -164,6 +256,32 @@ export function Plans() {
             </p>
           )}
         </>
+      )}
+      {archived.length > 0 && (
+        <details className="mt-6 rounded-xl border border-line bg-panel px-5 py-3.5">
+          <summary className="cursor-pointer text-sm font-semibold">
+            Archivados ({archived.length})
+          </summary>
+          <ul className="mt-3 divide-y divide-line">
+            {archived.map((plan) => (
+              <li
+                key={plan.id}
+                className="flex flex-wrap items-center gap-2 py-2.5 text-sm"
+                aria-label={`Plan archivado ${plan.label}`}
+              >
+                <span className="font-medium">{plan.label}</span>
+                <span className="font-mono text-xs text-muted">{plan.id}</span>
+                <PlanBadges plan={plan} />
+                <span className="text-muted">{formatPrice(plan.price)}</span>
+                {plan.updatedBy && (
+                  <span className="text-xs text-muted">
+                    · por {plan.updatedBy} el {formatDate(plan.updatedAt)}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
     </>
   );

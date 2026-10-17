@@ -21,6 +21,8 @@ export type Permission =
   | 'notifications:send'
   | 'billing:read'
   | 'billing:write'
+  | 'plans:write'
+  | 'platform:write'
   | 'self';
 
 /**
@@ -62,6 +64,8 @@ const MATRIX: Record<Role, ReadonlySet<Permission>> = {
     'notifications:send',
     'billing:read',
     'billing:write',
+    'plans:write',
+    'platform:write',
   ]),
   owner: new Set<Permission>([
     'self',
@@ -84,6 +88,8 @@ const MATRIX: Record<Role, ReadonlySet<Permission>> = {
     'notifications:send',
     'billing:read',
     'billing:write',
+    'plans:write',
+    'platform:write',
   ]),
 };
 

@@ -213,6 +213,8 @@ const tenancy = createTenancy({
 | `assets`       | `false`                 | `GET {prefix}/assets/<ruta>`: un archivo del almacenamiento del tenant                    |
 | `health`       | `false`                 | `GET {prefix}/health`: estado de la base central, caché, cola, almacenamiento y transportes. 200 o 503 |
 | `plans`        | `false`                 | `GET {prefix}/plans`: planes públicos, precios y catálogo de módulos (para la web comercial) |
+| `platform`     | `false`                 | `GET {prefix}/platform` y `{prefix}/platform/assets/*`: marca y contacto de la plataforma. Cualquier host |
+| `notifications` | `false`                | `GET {prefix}/notifications`: avisos vigentes del tenant |
 | `prefix`       | `'/tenancy'`            | Debe empezar con `/` y usar solo letras, dígitos, `/`, `_` y `-`                         |
 | `cacheControl` | `'public, max-age=300'` | `Cache-Control` de `me`, `theme.css` y `assets`                                          |
 

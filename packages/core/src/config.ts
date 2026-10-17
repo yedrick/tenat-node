@@ -30,7 +30,14 @@ import type { MemoryErrorTrackerOptions } from './observability/memory-error-tra
 import type { ResolverName } from './resolvers/resolvers.js';
 import type { TenancyPlugin } from './plugins.js';
 import type { HttpRoutesOptions } from './http/routes.js';
-import type { BillingRepository, NotificationRepository, PaymentProvider } from './ports/index.js';
+import type {
+  BillingRepository,
+  NotificationRepository,
+  PaymentProvider,
+  PlanSettingsRepository,
+  PlatformSettingsRepository,
+} from './ports/index.js';
+import type { PlatformPatch } from './domain/index.js';
 
 export interface TenancyConfig {
   /** Dominios de la app central ('tuapp.com'). Nunca resuelven a un tenant. */
@@ -73,6 +80,19 @@ export interface TenancyConfig {
   plans?: Readonly<Record<string, PlanDefinition>>;
   /** Plan de los tenants que no tienen uno (`plan: null`). */
   defaultPlan?: string;
+  /** Planes editables desde el panel: dónde se guardan los cambios y cada cuánto se recargan. */
+  planSettings?: {
+    /** Por defecto, la base central (con `@tenancy-node/db`) o memoria. */
+    repository?: PlanSettingsRepository;
+    /** Recarga de respaldo (además del aviso entre instancias). Por defecto 60 s; `0` la apaga. */
+    refreshMs?: number;
+  };
+  /** Marca y contacto de la plataforma (`tenancy.platform`), editables desde el panel. */
+  platform?: {
+    /** Valores mientras no se guarden desde el panel (nombre, color, contacto...). */
+    defaults?: PlatformPatch;
+    repository?: PlatformSettingsRepository;
+  };
   /** Cobros a los tenants: suscripción, facturas y pagos (`tenancy.billing`). */
   billing?: {
     /** Dónde se guardan. Por defecto, la base central (con `@tenancy-node/db`) o memoria. */
@@ -173,6 +193,7 @@ const ConfigSchema = v.object({
       health: v.optional(v.boolean()),
       plans: v.optional(v.boolean()),
       notifications: v.optional(v.boolean()),
+      platform: v.optional(v.boolean()),
       prefix: v.optional(v.pipe(v.string(), v.regex(/^\/[a-z0-9/_-]*$/i))),
       cacheControl: v.optional(v.string()),
     }),
@@ -204,6 +225,18 @@ const ConfigSchema = v.object({
     ),
   ),
   defaultPlan: v.optional(v.string()),
+  planSettings: v.optional(
+    v.object({
+      repository: v.optional(withMethods('list', 'save', 'delete')),
+      refreshMs: v.optional(v.pipe(v.number(), v.minValue(0))),
+    }),
+  ),
+  platform: v.optional(
+    v.object({
+      defaults: v.optional(v.record(v.string(), v.unknown())),
+      repository: v.optional(withMethods('get', 'save')),
+    }),
+  ),
   billing: v.optional(
     v.object({
       repository: v.optional(withMethods('findSubscription', 'saveSubscription', 'insertInvoice', 'listInvoices')),

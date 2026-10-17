@@ -123,3 +123,12 @@ export const IconWallet = icon([
   'M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4',
 ]);
 export const IconSend = icon(['m22 2-7 20-4-9-9-4z', 'M22 2 11 13']);
+export const IconPalette = icon([
+  'M12 22a10 10 0 1 1 10-10c0 2.8-2.2 4-4 4h-2a2 2 0 0 0-1.5 3.3A2 2 0 0 1 12 22z',
+  'M7.5 10.5h.01',
+  'M12 7.5h.01',
+  'M16.5 10.5h.01',
+]);
+export const IconPencil = icon(['M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z']);
+export const IconUndo = icon(['M3 7v6h6', 'M21 17a9 9 0 0 0-15-6.7L3 13']);
+export const IconArchive = icon(['M21 8v13H3V8', 'M1 3h22v5H1z', 'M10 12h4']);

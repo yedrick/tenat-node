@@ -47,6 +47,14 @@ describe('cli: plans', () => {
     expect(list.text).toContain('BOB 150/mes · 1500/año');
     expect(list.text).toContain('interno (oculto)');
     expect(list.text).toContain('usuarios: sin límite');
+    await tenancy.plans.update('pro', { label: 'Pro 2026' });
+    await tenancy.plans.create('extra', { label: 'Extra', features: ['agenda'] });
+    const edited = await run(['plans']);
+    expect(edited.text).toContain('pro (modificado)');
+    expect(edited.text).toContain('extra (panel)');
+    expect(edited.text).toContain('Pro 2026');
+    await tenancy.plans.remove('extra');
+    await tenancy.plans.remove('pro');
     const json = JSON.parse((await run(['plans', '--json'])).io.out());
     expect(json.plans.map((p: { id: string; tenants: number }) => [p.id, p.tenants])).toEqual([
       ['basico', 1],

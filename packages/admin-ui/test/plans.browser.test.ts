@@ -218,4 +218,39 @@ describe.skipIf(
     expect(problems).toEqual([]);
     await page.close();
   });
+  it('edits a plan price and the platform brand without deploying', async () => {
+    const page = await newPage();
+    await page.goto(`${base}/`);
+    await page.getByLabel('Email').fill('owner@tuapp.com');
+    await page.getByLabel('Contraseña').fill(PASSWORD);
+    await page.getByRole('button', { name: 'Entrar' }).click();
+    await page.getByRole('heading', { name: 'Dashboard' }).waitFor();
+
+    // Precio de un plan de la configuración, editado desde el panel
+    await page.getByRole('link', { name: 'Planes', exact: true }).click();
+    const basico = page.getByRole('region', { name: 'Plan Básico' });
+    await basico.getByRole('button', { name: 'Editar' }).click();
+    const form = page.getByRole('form', { name: 'Editar plan Básico' });
+    await form.getByLabel('Mensual').fill('180');
+    await form.getByRole('button', { name: 'Guardar' }).click();
+    await page.getByText('Plan "Básico" guardado').waitFor();
+    await expect.poll(async () => basico.textContent()).toContain('180 BOB / mes');
+    expect(await basico.textContent()).toContain('Modificado');
+    expect(tenancy.plans.get('basico')?.price).toMatchObject({ monthly: 180 });
+
+    // Marca de la plataforma
+    await page.getByRole('link', { name: 'Plataforma', exact: true }).click();
+    const brand = page.getByRole('form', { name: 'Marca de la plataforma' });
+    await brand.getByLabel('Nombre').fill('IONIX');
+    await brand.getByLabel('WhatsApp').fill('591 70000000');
+    await brand.getByRole('button', { name: 'Guardar' }).click();
+    await page.getByText('Plataforma guardada').waitFor();
+    expect(await page.getByTestId('platform-preview').textContent()).toContain('IONIX');
+    const platform = await tenancy.platform.get();
+    expect(platform).toMatchObject({ name: 'IONIX', contact: { whatsapp: '59170000000' } });
+    await page.getByText(/Actualizado por owner@tuapp.com/).waitFor();
+
+    expect(problems).toEqual([]);
+    await page.close();
+  });
 });

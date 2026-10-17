@@ -207,3 +207,40 @@ export class BillingError extends TenancyError {
     super(`TENANCY_BILLING_${code}`, message, details);
   }
 }
+
+/** Cambio de plan desde el panel que no es válido (módulo inexistente, precio negativo...). */
+export class InvalidPlanError extends TenancyError {
+  constructor(
+    readonly planId: string | null,
+    reason: string,
+  ) {
+    super('TENANCY_INVALID_PLAN', planId ? `Invalid plan "${planId}": ${reason}` : `Invalid plan: ${reason}`, {
+      ...(planId ? { planId } : {}),
+    });
+  }
+}
+
+export class PlanNotFoundError extends TenancyError {
+  constructor(readonly planId: string) {
+    super('TENANCY_PLAN_NOT_FOUND', `Plan "${planId}" not found`, { planId });
+  }
+}
+
+/** El plan ya existe, es el plan por defecto o lo usan tenants. */
+export class PlanConflictError extends TenancyError {
+  constructor(
+    readonly planId: string,
+    reason: string,
+  ) {
+    super('TENANCY_PLAN_CONFLICT', `Plan "${planId}": ${reason}`, { planId });
+  }
+}
+
+export class InvalidPlatformError extends TenancyError {
+  constructor(
+    readonly field: string,
+    reason: string,
+  ) {
+    super('TENANCY_INVALID_PLATFORM', `Invalid platform field "${field}": ${reason}`, { field });
+  }
+}

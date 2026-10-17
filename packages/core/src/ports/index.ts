@@ -17,3 +17,4 @@ export type * from './invalidation-bus.js';
 export type * from './telemetry.js';
 export type * from './notification-repository.js';
 export type * from './billing.js';
+export type * from './settings.js';

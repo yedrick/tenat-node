@@ -11,5 +11,6 @@ export * from './entities/plan.js';
 export * from './entities/font.js';
 export * from './entities/notification.js';
 export * from './entities/billing.js';
+export * from './entities/platform.js';
 export * from './events/domain-event.js';
 export * from './events/tenancy-events.js';

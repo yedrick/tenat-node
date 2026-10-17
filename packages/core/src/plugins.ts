@@ -11,6 +11,8 @@ import type {
   IdGenerator,
   Logger,
   NotificationRepository,
+  PlanSettingsRepository,
+  PlatformSettingsRepository,
   ProvisioningPipeline,
   TenantRepository,
 } from './ports/index.js';
@@ -33,6 +35,10 @@ export interface PluginSetupContext {
 export interface PluginContribution {
   tenants?: TenantRepository;
   domains?: DomainRepository;
+  /** Cambios de planes desde el panel (`tenancy.plans.update`). */
+  planSettings?: PlanSettingsRepository;
+  /** Marca de la plataforma (`tenancy.platform`). */
+  platformSettings?: PlatformSettingsRepository;
   /** Cobros (`tenancy.billing`). */
   billing?: BillingRepository;
   /** Avisos de la plataforma (`tenancy.notifications`). */

@@ -623,12 +623,34 @@ export function centralMigrations(prefix: string, kind: DialectKind): Record<str
     await drop.execute();
   };
 
+  // 0.12: planes y marca de la plataforma editables desde el panel.
+  const settingsUp = async (db: Db): Promise<void> => {
+    await timestamps(
+      table(db, 'plan_settings')
+        .addColumn('plan_id', 'varchar(50)', (c) => c.primaryKey())
+        .addColumn('settings', d.json, (c) => c.notNull())
+        .addColumn('archived', 'boolean', (c) => c.notNull().defaultTo(false))
+        .addColumn('updated_by', 'varchar(191)'),
+    ).execute();
+    await timestamps(
+      table(db, 'platform_settings')
+        .addColumn('key', 'varchar(64)', (c) => c.primaryKey())
+        .addColumn('value', d.json, (c) => c.notNull())
+        .addColumn('updated_by', 'varchar(191)'),
+    ).execute();
+  };
+  const settingsDown = async (db: Db): Promise<void> => {
+    await scoped(db).schema.dropTable('platform_settings').ifExists().execute();
+    await scoped(db).schema.dropTable('plan_settings').ifExists().execute();
+  };
+
   return {
     '2026_09_25_000001_create_tenancy_tables': { up, down },
     '2026_09_26_000001_outbox_destinations': { up: eventsUp, down: eventsDown },
     '2026_10_17_000001_plans_leads_notifications': { up: plansUp, down: plansDown },
     '2026_10_17_000002_billing': { up: billingUp, down: billingDown },
     '2026_10_18_000001_billing_payments_unique': { up: paymentsUniqueUp, down: paymentsUniqueDown },
+    '2026_10_18_000002_plan_and_platform_settings': { up: settingsUp, down: settingsDown },
   };
 }
 

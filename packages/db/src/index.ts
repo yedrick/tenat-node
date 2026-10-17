@@ -33,6 +33,10 @@ export { copyOrder, type CopyOptions, type CopyProgress } from './provisioning/c
 export { KyselyTenantRepository } from './repositories/kysely-tenant-repository.js';
 export { KyselyNotificationRepository } from './repositories/kysely-notification-repository.js';
 export { KyselyBillingRepository } from './repositories/kysely-billing-repository.js';
+export {
+  KyselyPlanSettingsRepository,
+  KyselyPlatformSettingsRepository,
+} from './repositories/kysely-settings-repositories.js';
 export { KyselyDomainRepository } from './repositories/kysely-domain-repository.js';
 export { DatabaseServerRepository, type DatabaseServer } from './repositories/server-repository.js';
 export {

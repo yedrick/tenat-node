@@ -17,6 +17,8 @@ import {
   KyselyDomainRepository,
   KyselyNotificationRepository,
   KyselyBillingRepository,
+  KyselyPlanSettingsRepository,
+  KyselyPlatformSettingsRepository,
   KyselyTenantRepository,
   NoDatabaseServerAvailableError,
   TablePrefixPlugin,
@@ -30,6 +32,7 @@ import {
   MemoryLogger,
   notificationRepositoryContract,
   billingRepositoryContract,
+  settingsRepositoryContract,
   tenantRepositoryContract,
 } from '@tenancy-node/testing';
 import { sql, type Migration } from 'kysely';
@@ -191,6 +194,15 @@ export function databaseIntegrationSuite(target: IntegrationTarget): void {
         return new KyselyBillingRepository(centralOf(tenancy, n));
       });
 
+      settingsRepositoryContract(`Kysely settings repositories (${target.name})`, async () => {
+        const { tenancy, n } = await make();
+        const central = centralOf(tenancy, n);
+        return {
+          plans: new KyselyPlanSettingsRepository(central),
+          platform: new KyselyPlatformSettingsRepository(central),
+        };
+      });
+
       it.skipIf(!target.nativeQuery)('closes the native pool even when Kysely never used it', async () => {
         const driver = target.driver();
         const connection = parseConnectionUrl(url, driver.defaultPort);
@@ -233,6 +245,8 @@ export function databaseIntegrationSuite(target: IntegrationTarget): void {
           'billing_subscriptions',
           'billing_invoices',
           'billing_payments',
+          'plan_settings',
+          'platform_settings',
           'migrations',
         ]) {
           expect(tables).toContain(`t${n}_${name}`);

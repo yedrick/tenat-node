@@ -279,6 +279,72 @@ Asigna un plan a cada tenant actual (o define `defaultPlan`) **antes** de desple
 `npx tenancy tenant:plan imagendent clinica`.
 :::
 
+## Editar planes desde el panel (sin desplegar)
+
+La configuración es la base; desde el panel (**Planes → Editar**) o el código se pueden cambiar
+nombre, descripción, precio, módulos, límites, "más elegido" y visibilidad, y crear planes nuevos.
+El **catálogo de módulos** (`features`) sigue en el código: un plan del panel solo usa módulos que
+tu app ya hace cumplir con `requireFeature`.
+
+```ts
+await tenancy.plans.update('basico', {
+  price: { currency: 'BOB', monthly: 180, yearly: 1800 },
+  limits: { usuarios: 5 },
+  highlight: true,
+}, { by: 'ana@tuapp.com' });
+
+await tenancy.plans.create('premium', { label: 'Premium', features: '*', price: { currency: 'BOB', monthly: 500 } });
+
+await tenancy.plans.remove('basico'); // plan de código: vuelve a la configuración → 'reset'
+await tenancy.plans.remove('premium'); // plan del panel: se archiva → 'archived' (409 si lo usan tenants)
+```
+
+- Los cambios se guardan en `tenancy_plan_settings` y se validan igual que la configuración
+  (`TENANCY_INVALID_PLAN` 422).
+- `features.has()`, `limit()` y `requireFeature` siguen siendo **síncronos**: el catálogo se carga
+  al arrancar (la primera petición espera esa carga), y cada cambio se avisa a las demás instancias
+  por el bus de invalidación (`redisInvalidation`) y se recarga cada 60 s por las dudas
+  (`planSettings.refreshMs`).
+- `GET /tenancy/plans` y `/tenancy/me` muestran los valores editados al instante.
+- Cada cambio publica `plan.updated` (`{ planId, action: 'created' | 'updated' | 'reset' | 'archived', by }`).
+- Panel: permiso `plans:write` (admin y owner). API: `POST /plans`, `PATCH /plans/:id`, `DELETE /plans/:id`.
+
+## Marca de la plataforma
+
+Nombre, logo, favicon, color y contacto de la plataforma (el dominio central), editables desde el
+panel (**Plataforma**) para la web comercial, los correos y el panel:
+
+```ts
+createTenancy({
+  http: { platform: true }, // GET /tenancy/platform y /tenancy/platform/assets/*
+  platform: { defaults: { name: 'IONIX', primary: '#0F766E', contact: { whatsapp: '59170000000' } } },
+});
+
+await tenancy.platform.update({
+  contact: { email: 'ventas@ionix.bo' },
+  salesNotifyTo: ['jefe@ionix.bo'], // privado: no sale en la ruta pública
+});
+```
+
+`GET /tenancy/platform` responde en cualquier host, con CORS abierto y ETag:
+
+```json
+{
+  "name": "IONIX",
+  "logoUrl": "/tenancy/platform/assets/logo-3f2a9c1b7d4e5f60.png",
+  "faviconUrl": null,
+  "primary": "#0F766E",
+  "contact": { "whatsapp": "59170000000", "email": "ventas@ionix.bo" }
+}
+```
+
+- El logo y el favicon se suben desde el panel (`PUT /admin/api/platform/logo`, PNG/JPEG/GIF/WebP; el
+  favicon también ICO) al almacenamiento central (`platform/…`). Con disco local se sirven en
+  `/tenancy/platform/assets/…`; con S3, `logoUrl` apunta al bucket.
+- El WhatsApp se guarda solo con dígitos y código de país: arma el enlace con `https://wa.me/${whatsapp}`.
+- El evento `lead.created` trae `notifyTo` (los `salesNotifyTo`) para el aviso por correo.
+- `platform.updated` (`{ fields, by }`) se publica en cada cambio. Permiso del panel: `platform:write`.
+
 ## Sin planes
 
 Sin `plans` en la configuración el control está apagado: `tenancy.features.has()` devuelve `true`
@@ -424,7 +490,7 @@ requireFeature(tenancy, 'reprotes'); // ❌ error de tipos: no existe
 
 | Dónde       | Qué hay                                                                                       |
 | ----------- | --------------------------------------------------------------------------------------------- |
-| Panel       | **Planes** (módulos, precios, tenants por plan), **Solicitudes**, plan y módulos sueltos en cada tenant, tenants por plan en el dashboard |
+| Panel       | **Planes** (editar precios, módulos y límites, crear y archivar planes), **Plataforma** (marca y contacto), **Solicitudes**, plan y módulos sueltos en cada tenant, tenants por plan en el dashboard |
 | Admin API   | `GET /plans`, `GET /fonts`, `GET/PATCH/DELETE /leads`, `PATCH /tenants/:id { plan, features }`, `GET /tenants?plan=` |
 | CLI         | `tenancy plans`, `tenancy tenant:plan <id> [plan] [--add] [--remove] [--limit] [--reset] [--no-plan]`, `tenancy list --plan=` |
 

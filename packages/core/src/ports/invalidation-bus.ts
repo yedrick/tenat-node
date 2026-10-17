@@ -3,6 +3,8 @@ export type Invalidation =
   | { readonly kind: 'tenant'; readonly tenantId: string }
   | { readonly kind: 'domain'; readonly domain: string }
   | { readonly kind: 'domains-of'; readonly tenantId: string }
+  | { readonly kind: 'plans' }
+  | { readonly kind: 'platform' }
   | { readonly kind: 'all' };
 
 export interface InvalidationMessage {

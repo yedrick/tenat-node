@@ -36,7 +36,7 @@ export function tenantJson(t: Tenant) {
 }
 
 /** Formatos de logo aceptados, reconocidos por su contenido (nunca SVG: puede llevar scripts). */
-const IMAGE_TYPES = [
+export const IMAGE_TYPES = [
   {
     type: 'image/png',
     ext: 'png',

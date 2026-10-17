@@ -151,6 +151,12 @@ export interface TenancyEventMap {
   'theme.updated': ThemeUpdatedEventData;
   'notification.sent': NotificationSentEventData;
   'notification.delivered': NotificationDeliveredEventData;
+  'plan.updated': {
+    planId: string;
+    action: 'created' | 'updated' | 'reset' | 'archived';
+    by: string | null;
+  };
+  'platform.updated': { fields: string[]; by: string | null };
   'billing.subscription_updated': SubscriptionEventData;
   'billing.subscription_past_due': SubscriptionEventData & { invoiceId: string };
   'billing.invoice_created': InvoiceEventData;

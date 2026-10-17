@@ -19,6 +19,7 @@ import {
   IconWallet,
   IconWebhook,
   IconX,
+  IconPalette,
 } from './icons';
 import { Avatar, cx } from './ui';
 
@@ -39,6 +40,7 @@ const NAV: { title: string; items: NavItem[] }[] = [
       { to: '/leads', label: 'Solicitudes', permission: 'leads:read', icon: <IconInbox /> },
       { to: '/notifications', label: 'Avisos', permission: 'tenants:read', icon: <IconBell /> },
       { to: '/billing', label: 'Cobros', permission: 'billing:read', icon: <IconWallet /> },
+      { to: '/platform', label: 'Plataforma', permission: 'tenants:read', icon: <IconPalette /> },
     ],
   },
   {

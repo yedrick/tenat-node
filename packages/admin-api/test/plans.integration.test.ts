@@ -482,5 +482,134 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')(
         ]),
       );
     });
+    it('edits plans and the platform brand from the panel', async () => {
+      const support = await login('soporte@tuapp.com');
+      const headers = await login('admin@tuapp.com');
+      expect(
+        (await call('PATCH', '/plans/basico', { headers: support, body: { label: 'x' } })).status,
+      ).toBe(403);
+
+      const edited = await call('PATCH', '/plans/basico', {
+        headers,
+        body: { label: 'Básico 2026', price: { currency: 'BOB', monthly: 180 }, highlight: true },
+      });
+      expect(edited.status).toBe(200);
+      expect(edited.body).toMatchObject({
+        label: 'Básico 2026',
+        customized: true,
+        source: 'config',
+        updatedBy: 'admin@tuapp.com',
+      });
+      expect(
+        (await call('PATCH', '/plans/basico', { headers, body: { features: ['nope'] } })).body.error
+          .code,
+      ).toBe('TENANCY_INVALID_PLAN');
+      const created = await call('POST', '/plans', {
+        headers,
+        body: {
+          id: 'premium',
+          label: 'Premium',
+          features: '*',
+          price: { currency: 'BOB', monthly: 500 },
+        },
+      });
+      expect(created.status).toBe(201);
+      expect(
+        (
+          await call('POST', '/plans', {
+            headers,
+            body: { id: 'premium', label: 'x', features: [] },
+          })
+        ).status,
+      ).toBe(409);
+      // El plan nuevo se puede asignar y se ve en la web comercial.
+      expect(
+        (await call('PATCH', '/tenants/clinica-c', { headers, body: { plan: 'premium' } })).status,
+      ).toBe(200);
+      expect((await call('DELETE', '/plans/premium', { headers })).status).toBe(409);
+      expect(
+        (await call('PATCH', '/tenants/clinica-c', { headers, body: { plan: 'pro' } })).status,
+      ).toBe(200);
+      expect((await call('DELETE', '/plans/premium', { headers })).body).toEqual({
+        id: 'premium',
+        result: 'archived',
+      });
+      expect((await call('DELETE', '/plans/basico', { headers })).body).toEqual({
+        id: 'basico',
+        result: 'reset',
+      });
+      const list = await call('GET', '/plans', { headers: support });
+      expect(list.body.plans.find((p: { id: string }) => p.id === 'premium')).toMatchObject({
+        archived: true,
+      });
+      expect(list.body.plans.find((p: { id: string }) => p.id === 'basico')).toMatchObject({
+        label: 'Básico',
+        customized: false,
+      });
+
+      const brand = await call('PATCH', '/platform', {
+        headers,
+        body: {
+          name: 'IONIX',
+          primary: '#0f766e',
+          contact: { whatsapp: '+591 70000000', email: 'ventas@ionix.bo' },
+          salesNotifyTo: ['jefe@ionix.bo'],
+        },
+      });
+      expect(brand.status).toBe(200);
+      expect(brand.body).toMatchObject({
+        name: 'IONIX',
+        primary: '#0F766E',
+        contact: { whatsapp: '59170000000' },
+      });
+      expect(
+        (await call('PATCH', '/platform', { headers, body: { primary: 'rojo' } })).body.error.code,
+      ).toBe('TENANCY_INVALID_PLATFORM');
+      expect(
+        (await call('PATCH', '/platform', { headers: support, body: { name: 'x' } })).status,
+      ).toBe(403);
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+      const upload = await fetch(`${base}/platform/logo`, {
+        method: 'PUT',
+        headers: { ...headers, 'content-type': 'image/png' },
+        body: png,
+      });
+      const withLogo = (await upload.json()) as { logo: string; logoUrl: string };
+      expect(withLogo.logo).toMatch(/^platform\/logo-[0-9a-f]{16}\.png$/);
+      const ico = await fetch(`${base}/platform/favicon`, {
+        method: 'PUT',
+        headers: { ...headers, 'content-type': 'image/x-icon' },
+        body: Buffer.from([0, 0, 1, 0, 1]),
+      });
+      expect(((await ico.json()) as { favicon: string }).favicon).toMatch(/\.ico$/);
+      const bad = await fetch(`${base}/platform/logo`, {
+        method: 'PUT',
+        headers: { ...headers, 'content-type': 'image/png' },
+        body: Buffer.from('<svg/>'),
+      });
+      expect(bad.status).toBe(415);
+      expect((await call('GET', '/platform', { headers: support })).body.salesNotifyTo).toEqual([
+        'jefe@ionix.bo',
+      ]);
+
+      // El aviso de una solicitud lleva los correos de ventas.
+      const lead = await admin.api.leads.create({ name: 'Dora', email: 'dora@example.com' });
+      expect(leadEvents.find((e) => (e.data as { id: number }).id === lead.id)?.data).toMatchObject(
+        {
+          notifyTo: ['jefe@ionix.bo'],
+        },
+      );
+      const audit = await call('GET', '/audit?action=p', { headers });
+      expect(audit.body.map((a: { action: string }) => a.action)).toEqual(
+        expect.arrayContaining([
+          'plan.update',
+          'plan.create',
+          'plan.archive',
+          'plan.reset',
+          'platform.update',
+          'platform.logo_upload',
+        ]),
+      );
+    });
   },
 );

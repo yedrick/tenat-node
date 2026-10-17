@@ -106,7 +106,7 @@ export interface RedisInvalidationOptions {
   onError?: (error: unknown) => void;
 }
 
-const KINDS = new Set(['tenant', 'domain', 'domains-of', 'all']);
+const KINDS = new Set(['tenant', 'domain', 'domains-of', 'plans', 'platform', 'all']);
 
 function parseMessage(raw: string): InvalidationMessage {
   const message = JSON.parse(raw) as InvalidationMessage;

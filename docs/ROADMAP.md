@@ -210,4 +210,13 @@ Verificado con 556 pruebas del backend contra PostgreSQL 16, MySQL 8, MariaDB 11
 - [x] Guía "Planes y módulos" con la conexión paso a paso (backend y frontend), ADR, CHANGELOG
 - [x] Publicar v0.11.0 (GitHub Release con los .tgz)
 
+## Fase 11 — Planes y marca editables desde el panel (v0.12) ✅
+
+- [x] Cambios de planes guardados sobre la configuración (`tenancy_plan_settings`), crear, restablecer y archivar
+- [x] Permisos síncronos con recarga por el bus de invalidación y cada 60 s
+- [x] Marca de la plataforma (`tenancy_platform_settings`): nombre, logo, favicon, color, contacto y correos de ventas
+- [x] `GET /tenancy/platform` y `/tenancy/platform/assets/*` públicos; `notifyTo` en `lead.created`
+- [x] Panel: edición de planes y página "Plataforma"; CLI con los planes del panel
+- [x] Pruebas en memoria y en PostgreSQL, MySQL, MariaDB y SQLite
+
 Pendiente para la app (fuera de la librería): conectar una pasarela de pago real y un proyecto de Firebase real, y la web comercial (Fase 4 del plan de IONIX).

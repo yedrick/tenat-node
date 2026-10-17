@@ -53,6 +53,15 @@ import { InMemoryNotificationRepository } from './infrastructure/memory/in-memor
 import { InMemoryBillingRepository } from './infrastructure/memory/in-memory-billing-repository.js';
 import { createBillingService, type BillingApi } from './billing/billing-service.js';
 import {
+  createSettingsService,
+  type PlansAdminApi,
+  type PlatformApi,
+} from './settings/settings-service.js';
+import {
+  InMemoryPlanSettingsRepository,
+  InMemoryPlatformSettingsRepository,
+} from './infrastructure/memory/in-memory-settings-repositories.js';
+import {
   createNotificationService,
   type NotificationsApi,
 } from './notifications/notification-service.js';
@@ -195,7 +204,7 @@ export interface FeaturesApi {
   catalog(): FeatureInfo[];
 }
 
-export interface PlansApi {
+export interface PlansApi extends PlansAdminApi {
   /** Planes en el orden de la configuración. */
   list(options?: { publicOnly?: boolean }): PublicPlan[];
   get(id: string): PublicPlan | undefined;
@@ -340,6 +349,9 @@ export class Tenancy {
   readonly notifications: NotificationsApi;
   /** Cobros a los tenants: suscripción, facturas, pagos y pasarelas. */
   readonly billing: BillingApi;
+  /** Marca y contacto de la plataforma (dominio central), editables desde el panel. */
+  readonly platform: PlatformApi;
+  private settings!: ReturnType<typeof createSettingsService>;
   /** Rutas HTTP opcionales (`/tenancy/me`, `theme.css`, `assets`, `health`). Las usan los adaptadores. */
   readonly http: TenancyHttpRoutes;
   readonly centralDomains: readonly string[];
@@ -620,7 +632,9 @@ export class Tenancy {
       return value === undefined ? null : value;
     };
     this.features = {
-      enabled: catalog.enabled,
+      get enabled() {
+        return catalog.enabled;
+      },
       has: (feature, tenant) =>
         !catalog.enabled || resolveFeatures(tenant).features.includes(feature),
       require: (feature, tenant) => {
@@ -648,7 +662,31 @@ export class Tenancy {
       of: (tenant) => resolveFeatures(tenant),
       catalog: () => catalog.features(),
     };
+    const settingsConfig = config.planSettings ?? {};
+    this.settings = createSettingsService({
+      catalog,
+      plans:
+        settingsConfig.repository ?? contributed.planSettings ?? new InMemoryPlanSettingsRepository(),
+      platform:
+        config.platform?.repository ??
+        contributed.platformSettings ??
+        new InMemoryPlatformSettingsRepository(),
+      platformDefaults: config.platform?.defaults ?? {},
+      storage: this.storageDriver,
+      clock,
+      logger: this.logger,
+      countTenants: async (plan) => (await repo.list({ plan, perPage: 1 })).total,
+      publish: (type, data) => this.central(() => bus.publish({ type, data } as never)),
+      invalidate: (kind) => forward?.({ kind }),
+      assetUrl: async (path) =>
+        ['local', 'memory'].includes(this.storageDriver.name)
+          ? `${this.http.prefix}/platform/assets/${path.replace(/^platform\//, '')}`
+          : new TenantStorage(this.storageDriver, null).url(path),
+      refreshMs: settingsConfig.refreshMs ?? 60_000,
+    });
+    this.platform = this.settings.platform;
     this.plans = {
+      ...this.settings.plans,
       list: (options) => catalog.plans(options),
       get: (id) => catalog.plan(id),
       defaultPlan: catalog.defaultPlan,
@@ -859,6 +897,11 @@ export class Tenancy {
         features: (tenant) => (catalog.enabled ? this.features.of(tenant) : undefined),
         notifications: async (tenant) =>
           (await this.notifications.forTenant({ tenant })).map(({ read: _read, roles: _roles, audience: _a, createdBy: _c, ...n }) => n),
+        platform: () => this.platform.public(),
+        platformAsset: async (name) =>
+          ['local', 'memory'].includes(this.storageDriver.name)
+            ? this.storageDriver.get(`${CENTRAL_STORAGE_PREFIX}platform/${name}`)
+            : undefined,
         plans: () => ({
           plans: catalog.plans({ publicOnly: true }),
           features: catalog.features(),
@@ -965,6 +1008,7 @@ export class Tenancy {
    * en el log (`operation: queue.job`); un trabajo que agota sus intentos se registra como error.
    */
   async worker(options: WorkerOptions = {}): Promise<QueueWorker> {
+    await this.settings.ensure();
     const worker = await this.queueDriver.process(
       async (job) => {
         const definition = this.jobHandlers.get(job.name);
@@ -1117,6 +1161,8 @@ export class Tenancy {
     request: RequestLike,
     options: { onUnidentified?: 'error' | 'central' } = {},
   ): Promise<TenantScope> {
+    // Planes y marca editados desde el panel: la primera petición espera su carga.
+    await this.settings.ensure();
     const resolution = await this.resolve(request);
     if (resolution.kind === 'unidentified' && (options.onUnidentified ?? 'error') === 'error') {
       const error = new TenantNotIdentifiedError(
@@ -1164,6 +1210,7 @@ export class Tenancy {
 
   /** Espera los eventos pendientes y libera los recursos del contexto raíz. */
   async close(): Promise<void> {
+    this.settings.close();
     for (const worker of this.workers.splice(0)) await worker.close();
     await this.bus.flush();
     await this.invalidation?.flush();
@@ -1238,10 +1285,16 @@ export class Tenancy {
       case 'domains-of':
         domains?.invalidateTenant(item.tenantId);
         break;
+      case 'plans':
+      case 'platform':
+        this.settings?.onInvalidation(item.kind);
+        break;
       case 'all':
         tenants?.clear();
         domains?.clear();
         this.renderer.clear();
+        this.settings?.onInvalidation('plans');
+        this.settings?.onInvalidation('platform');
         break;
     }
   }
@@ -1256,7 +1309,16 @@ export class Tenancy {
       bootstrappers: [],
     };
     const owners: Partial<
-      Record<'tenants' | 'domains' | 'provisioning' | 'notifications' | 'billing', string>
+      Record<
+        | 'tenants'
+        | 'domains'
+        | 'provisioning'
+        | 'notifications'
+        | 'billing'
+        | 'planSettings'
+        | 'platformSettings',
+        string
+      >
     > = {};
     for (const plugin of plugins) {
       const contribution = plugin.setup(context);
@@ -1266,6 +1328,8 @@ export class Tenancy {
         'provisioning',
         'notifications',
         'billing',
+        'planSettings',
+        'platformSettings',
       ] as const) {
         if (contribution[key] === undefined) continue;
         if (owners[key]) {

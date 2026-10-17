@@ -16,6 +16,8 @@ declare module '@tenancy-node/core' {
       email: string | null;
       plan: string | null;
       message: string | null;
+      /** Correos de ventas de la plataforma (`platform.salesNotifyTo`), para el aviso. */
+      notifyTo: string[];
     };
   }
 }
@@ -61,6 +63,7 @@ export async function createLead(ctx: AdminContext, input: NewLead): Promise<Lea
   // Un plan que no existe (o un formulario viejo) no rompe la solicitud: queda sin plan.
   const plan = input.plan && (!t.features.enabled || t.plans.get(input.plan)) ? input.plan : null;
   const lead = await ctx.leads.create({ ...input, plan });
+  const notifyTo = (await t.platform.get()).salesNotifyTo;
   await t.central(() =>
     t.events.publish('lead.created', {
       id: lead.id,
@@ -71,6 +74,7 @@ export async function createLead(ctx: AdminContext, input: NewLead): Promise<Lea
       email: lead.email,
       plan: lead.plan,
       message: lead.message,
+      notifyTo,
     }),
   );
   return lead;

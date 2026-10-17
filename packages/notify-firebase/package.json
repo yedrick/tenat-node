@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/notify-firebase",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "description": "Firebase Cloud Messaging channel for tenancy-node notifications (push to web, Android and iOS)",
   "keywords": [
     "multi-tenancy",

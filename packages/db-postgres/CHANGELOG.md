@@ -1,5 +1,13 @@
 # @tenancy-node/db-postgres
 
+## 0.12.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @tenancy-node/core@0.12.0
+  - @tenancy-node/db@0.12.0
+
 ## 0.11.1
 
 ### Patch Changes

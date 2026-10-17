@@ -9,3 +9,4 @@ export * from './contracts/queue-driver.contract.js';
 export * from './memory-transport.js';
 export * from './contracts/notification-repository.contract.js';
 export * from './contracts/billing-repository.contract.js';
+export * from './contracts/settings-repository.contract.js';

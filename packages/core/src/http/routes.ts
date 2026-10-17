@@ -11,6 +11,11 @@ export interface HttpRoutesOptions {
   assets?: boolean;
   /** `GET /tenancy/notifications`: avisos vigentes del tenant (sin estado de lectura: eso lo da tu API con el usuario). */
   notifications?: boolean;
+  /**
+   * `GET /tenancy/platform`: marca y contacto de la plataforma (nombre, logo, color, WhatsApp,
+   * email) para la web comercial, y `GET /tenancy/platform/assets/*` (su logo). Cualquier host.
+   */
+  platform?: boolean;
   /** `GET /tenancy/plans`: planes públicos con precios y módulos (para la web comercial). Responde en cualquier host. */
   plans?: boolean;
   /** `GET /tenancy/health`: estado de la base central, caché, cola y almacenamiento. */
@@ -54,6 +59,10 @@ export interface RoutesHost {
   features(tenant: Tenant): ResolvedFeatures | undefined;
   /** Planes públicos y catálogo de módulos. */
   plans(): { plans: PublicPlan[]; features: FeatureInfo[]; defaultPlan: string | null };
+  /** Marca pública de la plataforma. */
+  platform(): Promise<unknown>;
+  /** Archivo de `platform/` en el almacenamiento central (solo drivers local y memoria). */
+  platformAsset(name: string): Promise<Uint8Array | undefined>;
   /** Avisos vigentes del tenant, para `GET /tenancy/notifications`. */
   notifications(tenant: Tenant): Promise<unknown[]>;
 }
@@ -110,7 +119,8 @@ export class TenancyHttpRoutes {
       this.options.assets ||
       this.options.health ||
       this.options.plans ||
-      this.options.notifications,
+      this.options.notifications ||
+      this.options.platform,
     );
   }
 
@@ -119,7 +129,17 @@ export class TenancyHttpRoutes {
    * (`health` y `plans`). Los adaptadores las atienden sin resolver el tenant.
    */
   isPublic(method: string, path: string): boolean {
-    return this.isHealth(method, path) || this.isPlans(method, path);
+    return (
+      this.isHealth(method, path) || this.isPlans(method, path) || this.isPlatform(method, path)
+    );
+  }
+
+  private isPlatform(method: string, path: string): boolean {
+    return (
+      Boolean(this.options.platform) &&
+      (method === 'GET' || method === 'HEAD') &&
+      (path === `${this.prefix}/platform` || path.startsWith(`${this.prefix}/platform/assets/`))
+    );
   }
 
   private isPlans(method: string, path: string): boolean {
@@ -156,6 +176,23 @@ export class TenancyHttpRoutes {
     if (this.isHealth(method, path)) {
       const health = await this.health();
       return method === 'HEAD' ? { ...health, body: '' } : health;
+    }
+    if (this.isPlatform(method, path)) {
+      const response =
+        path === `${this.prefix}/platform`
+          ? jsonWithEtag(await this.host.platform(), this.cacheControl)
+          : await this.platformAsset(path.slice(`${this.prefix}/platform/assets/`.length));
+      if (response.status === 200 && notModified(request, response.headers.etag)) {
+        return {
+          status: 304,
+          headers: {
+            etag: response.headers.etag!,
+            'cache-control': response.headers['cache-control']!,
+          },
+          body: '',
+        };
+      }
+      return method === 'HEAD' ? { ...response, body: '' } : response;
     }
     if (this.isPlans(method, path)) {
       const plans = this.plans();
@@ -264,6 +301,26 @@ export class TenancyHttpRoutes {
     };
   }
 
+  private async platformAsset(name: string): Promise<HttpResponse> {
+    const notFound = json(404, {
+      error: { code: 'TENANCY_ASSET_NOT_FOUND', message: 'Not found' },
+    });
+    if (!/^[a-z0-9][a-z0-9.-]{0,99}$/.test(name) || name.includes('..')) return notFound;
+    const data = await this.host.platformAsset(name);
+    if (!data) return notFound;
+    return {
+      status: 200,
+      headers: {
+        'content-type': contentTypeFor(name),
+        etag: `"${createHash('sha1').update(data).digest('base64url')}"`,
+        'cache-control': this.cacheControl,
+        'x-content-type-options': 'nosniff',
+        'access-control-allow-origin': '*',
+      },
+      body: data,
+    };
+  }
+
   private plans(): HttpResponse {
     const text = JSON.stringify(this.host.plans());
     return {
@@ -312,6 +369,20 @@ export class TenancyHttpRoutes {
       body: JSON.stringify(report),
     };
   }
+}
+
+function jsonWithEtag(body: unknown, cacheControl: string): HttpResponse {
+  const text = JSON.stringify(body);
+  return {
+    status: 200,
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      etag: `"${createHash('sha1').update(text).digest('base64url')}"`,
+      'cache-control': cacheControl,
+      'access-control-allow-origin': '*',
+    },
+    body: text,
+  };
 }
 
 function json(status: number, body: unknown): HttpResponse {

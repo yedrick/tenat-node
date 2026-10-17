@@ -10,6 +10,7 @@ import { Leads } from './pages/Leads';
 import { Login } from './pages/Login';
 import { Notifications } from './pages/Notifications';
 import { Plans } from './pages/Plans';
+import { Platform } from './pages/Platform';
 import { TenantDetail } from './pages/TenantDetail';
 import { Tenants } from './pages/Tenants';
 import { Users } from './pages/Users';
@@ -34,6 +35,7 @@ export function App() {
   else if (path === '/tenants') page = <Tenants />;
   else if (tenant) page = <TenantDetail key={tenant.id} id={tenant.id!} />;
   else if (path === '/plans' && can('tenants:read')) page = <Plans />;
+  else if (path === '/platform' && can('tenants:read')) page = <Platform />;
   else if (path === '/leads' && can('leads:read')) page = <Leads />;
   else if (path === '/notifications' && can('tenants:read')) page = <Notifications />;
   else if (path === '/billing' && can('billing:read')) page = <Billing />;

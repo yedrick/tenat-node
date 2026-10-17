@@ -1,4 +1,4 @@
-import { InvalidConfigError, InvalidTenantDataError } from '../errors/errors.js';
+import { InvalidConfigError, InvalidPlanError, InvalidTenantDataError } from '../errors/errors.js';
 
 /**
  * Catálogo de módulos de tu aplicación, para autocompletar sus nombres (opcional):
@@ -85,6 +85,38 @@ export interface PublicPlan {
   public: boolean;
 }
 
+/**
+ * Cambios guardados desde el panel sobre un plan de la configuración (o un plan creado en el
+ * panel). Un campo sin definir conserva el valor de la configuración.
+ */
+export interface PlanOverride {
+  planId: string;
+  label?: string;
+  description?: string | null;
+  /** `null` quita el precio ("a consultar"). */
+  price?: PlanPrice | null;
+  features?: readonly string[] | '*';
+  limits?: Readonly<Record<string, number | null>>;
+  public?: boolean;
+  highlight?: boolean;
+  /** Plan creado en el panel y archivado: no se ofrece ni se puede asignar. */
+  archived: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  updatedBy: string | null;
+}
+
+/** Plan tal como lo ve el panel: de dónde sale y si tiene cambios. */
+export interface PlanInfo extends PublicPlan {
+  /** `config`: definido en el código; `panel`: creado desde el panel. */
+  source: 'config' | 'panel';
+  /** Plan de la configuración con cambios guardados desde el panel. */
+  customized: boolean;
+  archived: boolean;
+  updatedAt: Date | null;
+  updatedBy: string | null;
+}
+
 export interface FeatureInfo {
   id: string;
   label: string;
@@ -107,11 +139,15 @@ const MAX_OVERRIDES = 200;
  * Sin `plans` el control está apagado: todo tenant tiene todos los módulos.
  */
 export class PlanCatalog {
-  private readonly featureMap: ReadonlyMap<string, FeatureInfo>;
-  private readonly planMap: ReadonlyMap<string, PlanDefinition>;
+  private featureMap: ReadonlyMap<string, FeatureInfo>;
+  private planMap: ReadonlyMap<string, PlanDefinition>;
   readonly defaultPlan: string | null;
+  /** Configuración de código (sin cambios del panel). */
+  private readonly base: PlanCatalogConfig;
+  private overrides: ReadonlyMap<string, PlanOverride> = new Map();
 
   constructor(config: PlanCatalogConfig = {}) {
+    this.base = config;
     const features = new Map<string, FeatureInfo>();
     for (const [id, value] of Object.entries(config.features ?? {})) {
       if (!KEY_PATTERN.test(id)) throw new InvalidConfigError(`features: invalid name "${id}"`);
@@ -164,6 +200,106 @@ export class PlanCatalog {
     this.featureMap = features;
     this.planMap = plans;
     this.defaultPlan = config.defaultPlan ?? null;
+  }
+
+  /**
+   * Aplica los cambios guardados desde el panel (reemplaza los anteriores). Valida el resultado
+   * como si fuera la configuración: si algo no cuadra, lanza `InvalidPlanError` y no cambia nada.
+   */
+  applyOverrides(overrides: readonly PlanOverride[]): void {
+    const next = PlanCatalog.merge(this.base, this.featureMap, overrides);
+    this.featureMap = next.featureMap;
+    this.planMap = next.planMap;
+    this.overrides = new Map(overrides.map((o) => [o.planId, o]));
+  }
+
+  /** Valida cómo quedaría el catálogo con estos cambios, sin aplicarlos. */
+  check(overrides: readonly PlanOverride[]): void {
+    PlanCatalog.merge(this.base, this.featureMap, overrides);
+  }
+
+  /** ¿El plan viene de la configuración de código? */
+  isConfigPlan(id: string): boolean {
+    return Object.prototype.hasOwnProperty.call(this.base.plans ?? {}, id);
+  }
+
+  /** Planes para el panel (incluye los archivados), con su origen. */
+  describe(): PlanInfo[] {
+    const active = this.plans().map((p) => {
+      const o = this.overrides.get(p.id);
+      return {
+        ...p,
+        source: this.isConfigPlan(p.id) ? ('config' as const) : ('panel' as const),
+        customized: this.isConfigPlan(p.id) && o !== undefined,
+        archived: false,
+        updatedAt: o?.updatedAt ?? null,
+        updatedBy: o?.updatedBy ?? null,
+      };
+    });
+    const archived = [...this.overrides.values()]
+      .filter((o) => o.archived && !this.isConfigPlan(o.planId))
+      .map((o) => ({
+        id: o.planId,
+        label: o.label ?? o.planId,
+        description: o.description ?? null,
+        price: o.price ? { ...o.price } : null,
+        features: o.features === '*' ? [...this.featureMap.keys()] : [...(o.features ?? [])],
+        limits: { ...o.limits },
+        highlight: o.highlight ?? false,
+        public: o.public !== false,
+        source: 'panel' as const,
+        customized: false,
+        archived: true,
+        updatedAt: o.updatedAt,
+        updatedBy: o.updatedBy,
+      }));
+    return [...active, ...archived];
+  }
+
+  private static merge(
+    base: PlanCatalogConfig,
+    features: ReadonlyMap<string, FeatureInfo>,
+    overrides: readonly PlanOverride[],
+  ): PlanCatalog {
+    const plans: Record<string, PlanDefinition> = { ...base.plans };
+    // Los planes creados en el panel van después de los de código, en orden de creación.
+    const sorted = [...overrides].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    for (const o of sorted) {
+      const current = plans[o.planId];
+      if (!current) {
+        if (o.archived) continue;
+        if (!o.label || o.features === undefined)
+          throw new InvalidPlanError(o.planId, 'a new plan needs label and features');
+      }
+      plans[o.planId] = {
+        ...current,
+        label: o.label ?? current!.label,
+        features: o.features ?? current!.features,
+        ...(o.description !== undefined ? { description: o.description ?? undefined } : {}),
+        ...(o.price !== undefined ? { price: o.price } : {}),
+        ...(o.limits !== undefined ? { limits: o.limits } : {}),
+        ...(o.public !== undefined ? { public: o.public } : {}),
+        ...(o.highlight !== undefined ? { highlight: o.highlight } : {}),
+      } as PlanDefinition;
+    }
+    // El catálogo de módulos es el de código (o el derivado de los planes de código): el panel
+    // no inventa módulos, porque la app los hace cumplir con requireFeature.
+    const catalog = Object.fromEntries(
+      [...features.values()].map((f) => [
+        f.id,
+        f.description ? { label: f.label, description: f.description } : f.label,
+      ]),
+    );
+    try {
+      return new PlanCatalog({
+        features: catalog,
+        plans,
+        ...(base.defaultPlan !== undefined ? { defaultPlan: base.defaultPlan } : {}),
+      });
+    } catch (error) {
+      if (error instanceof InvalidConfigError) throw new InvalidPlanError(null, error.message);
+      throw error;
+    }
   }
 
   /** `true` si hay planes configurados (el control de módulos está activo). */

@@ -24,6 +24,8 @@ export const plansCommand: Command = {
   usage: 'tenancy plans',
   async run({ out, tenancy }) {
     const t = await tenancy();
+    // Incluye los planes editados o creados desde el panel.
+    await t.plans.reload();
     if (!t.features.enabled) {
       out.warn('No hay planes en la configuración (plans): todo tenant tiene todos los módulos.');
       out.data({ enabled: false, plans: [] });
@@ -39,10 +41,17 @@ export const plansCommand: Command = {
           (plan.id === defaultPlan ? withoutPlan : 0),
       })),
     );
+    const sources = new Map((await t.plans.describe()).map((p) => [p.id, p]));
     out.table(
       ['PLAN', 'NOMBRE', 'MÓDULOS', 'LÍMITES', 'PRECIO', 'TENANTS'],
       plans.map((p) => [
-        `${p.id}${p.id === defaultPlan ? ' (por defecto)' : ''}${p.public ? '' : ' (oculto)'}`,
+        `${p.id}${p.id === defaultPlan ? ' (por defecto)' : ''}${p.public ? '' : ' (oculto)'}${
+          sources.get(p.id)?.source === 'panel'
+            ? ' (panel)'
+            : sources.get(p.id)?.customized
+              ? ' (modificado)'
+              : ''
+        }`,
         p.label,
         p.features.join(', ') || '—',
         formatLimits(p.limits),
@@ -81,6 +90,7 @@ export const tenantPlanCommand: Command = {
     if (planArg !== undefined && args.values['no-plan'] === true)
       throw new UsageError('Use either <plan> or --no-plan, not both');
     const t = await tenancy();
+    await t.plans.reload();
     const tenant = await t.tenants.findOrFail(id);
 
     const add = listOption(args, 'add') ?? [];

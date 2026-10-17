@@ -400,7 +400,8 @@ El token se guarda como hash, vence en 60 s por defecto, vale solo en su tenant 
 
 | Sección del panel | API                                                                 | Permiso                     | Guía                                  |
 | ----------------- | ------------------------------------------------------------------- | --------------------------- | ------------------------------------- |
-| Planes            | `GET /plans`, `GET /fonts`, `PATCH /tenants/:id { plan, features }`  | `tenants:read` / `tenants:write` | [Planes y módulos](/guia/planes) |
+| Planes            | `GET/POST /plans`, `PATCH/DELETE /plans/:id`, `GET /fonts`, `PATCH /tenants/:id { plan, features }` | `tenants:read` / `plans:write`, `tenants:write` | [Planes y módulos](/guia/planes#editar-planes-desde-el-panel-sin-desplegar) |
+| Plataforma        | `GET/PATCH /platform`, `PUT /platform/logo`, `PUT /platform/favicon`  | `tenants:read` / `platform:write` | [Marca de la plataforma](/guia/planes#marca-de-la-plataforma) |
 | Solicitudes       | `GET/PATCH/DELETE /leads`, `POST /leads` (público con `leads`)       | `leads:read` / `leads:write` | [Planes y módulos](/guia/planes#solicitar-demo-solicitudes-en-el-panel) |
 | Avisos            | `GET/POST /notifications`, `POST /notifications/reach`, `POST /notifications/:id/deliver`, `DELETE /notifications/:id` | `tenants:read` / `notifications:send` | [Avisos y push](/guia/avisos) |
 | Cobros            | `GET /billing/invoices`, `GET /tenants/:id/billing`, `PUT /tenants/:id/billing/subscription`, `POST /billing/invoices/:id/payments`, `POST /billing/run`, `POST /billing/webhooks/:provider` (público) | `billing:read` / `billing:write` | [Cobros](/guia/cobros) |
