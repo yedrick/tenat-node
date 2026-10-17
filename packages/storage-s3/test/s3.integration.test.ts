@@ -29,7 +29,9 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')('S3 storage', () => {
 
   beforeAll(async () => {
     container = await new GenericContainer('chrislusf/seaweedfs:latest')
-      .withCommand(['server', '-s3', '-dir=/data'])
+      // Cada bucket usa sus propios volúmenes: con el límite por defecto (8) los últimos tests
+      // reciben InternalError al crear el suyo.
+      .withCommand(['server', '-s3', '-dir=/data', '-volume.max=100'])
       .withExposedPorts(8333)
       .withWaitStrategy(Wait.forLogMessage(/Start Seaweed S3 API Server|S3 API Server/i))
       .start();

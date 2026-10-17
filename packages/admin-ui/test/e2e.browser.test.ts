@@ -244,8 +244,9 @@ describe.skipIf(
     expect(tab.url()).toContain('tenant=bolivar');
     await tab.close();
     await page.getByRole('button', { name: 'Entrar', exact: true }).click();
-    await page.getByRole('dialog', { name: 'Entrar a Club Bolívar' }).waitFor();
-    await page.getByRole('button', { name: 'Entrar como Beto Recepción' }).waitFor();
+    const enter = page.getByRole('dialog', { name: 'Entrar a Club Bolívar' });
+    await enter.waitFor();
+    await enter.getByRole('button', { name: 'Entrar como Beto Recepción' }).waitFor();
     await shot(page, '08-enter');
     await page.keyboard.press('Escape');
 
