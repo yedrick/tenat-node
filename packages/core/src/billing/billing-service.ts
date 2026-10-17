@@ -361,8 +361,18 @@ export function createBillingService(deps: BillingServiceDeps): BillingApi {
         recordedBy: input.recordedBy ?? null,
         createdAt: at,
       };
-      await repo.insertPayment(payment);
-      const paidCents = invoice.paidCents + amountCents;
+      if (!(await repo.insertPayment(payment))) {
+        // Ya estaba registrado (webhook repetido, incluso en paralelo): no se cobra dos veces.
+        const [existing] = (await repo.listPayments({ invoiceId, limit: 1000 })).filter(
+          (p) => p.provider === payment.provider && p.providerRef === payment.providerRef,
+        );
+        return { invoice: (await repo.findInvoice(invoiceId))!, payment: existing ?? payment };
+      }
+      // Se recalcula desde la suma de los pagos: dos pagos en paralelo no se pisan.
+      const paidCents = (await repo.listPayments({ invoiceId, limit: 1000 })).reduce(
+        (sum, p) => sum + p.amountCents,
+        0,
+      );
       const paid = paidCents >= invoice.amountCents;
       const next: Invoice = {
         ...invoice,

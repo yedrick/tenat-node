@@ -1,6 +1,8 @@
 import { createTestTenancy } from '@tenancy-node/testing';
 import { describe, expect, it } from 'vitest';
 import {
+  InMemoryTenantRepository,
+  Theme,
   FeatureNotInPlanError,
   FontCatalog,
   InvalidConfigError,
@@ -59,6 +61,7 @@ describe('PlanCatalog', () => {
       plan: 'basico',
       planLabel: 'Básico',
       knownPlan: true,
+      unknownPlan: null,
       features: ['agenda', 'caja'],
       limits: { usuarios: 3 },
     });
@@ -73,13 +76,23 @@ describe('PlanCatalog', () => {
     ]);
   });
 
-  it('uses defaultPlan for tenants without plan and tolerates unknown plans', () => {
+  it('uses defaultPlan for tenants without plan and for unknown plans', () => {
     expect(catalog.resolve(null, null).plan).toBe('basico');
-    expect(catalog.resolve('viejo', { add: ['agenda'] })).toEqual({
-      plan: 'viejo',
-      planLabel: null,
+    // Un plan que ya no existe cae al plan por defecto (no queda sin módulos ni sin límites).
+    expect(catalog.resolve('viejo', { add: ['reportes'] })).toEqual({
+      plan: 'basico',
+      planLabel: 'Básico',
       knownPlan: false,
-      features: ['agenda'],
+      unknownPlan: 'viejo',
+      features: ['agenda', 'caja', 'reportes'],
+      limits: { usuarios: 3 },
+    });
+    // Sin defaultPlan: solo sus módulos sueltos.
+    const strict = new PlanCatalog({ plans: { p: { label: 'P', features: ['x', 'y'] } } });
+    expect(strict.resolve('viejo', { add: ['x'] })).toMatchObject({
+      plan: null,
+      unknownPlan: 'viejo',
+      features: ['x'],
       limits: {},
     });
   });
@@ -274,8 +287,8 @@ describe('tenancy.features / tenancy.plans', () => {
       plan: 'viejo',
       now: new Date(),
     });
-    expect(tenancy.features.list(old)).toEqual([]);
-    expect(tenancy.features.list(old)).toEqual([]);
+    expect(tenancy.features.list(old)).toEqual(['agenda', 'caja']);
+    expect(tenancy.features.list(old)).toEqual(['agenda', 'caja']);
     expect(logger.entries.filter((e) => e.fields.operation === 'features.resolve')).toHaveLength(1);
   });
 
@@ -301,6 +314,7 @@ describe('tenancy.features / tenancy.plans', () => {
       plan: 'profesional',
       features: { remove: ['caja'] },
     });
+    await tenancy.tenants.create({ id: 'sin-plan' });
 
     // Contexto central: la web comercial.
     expect(tenancy.http.isPublic('GET', '/tenancy/plans')).toBe(true);
@@ -333,6 +347,15 @@ describe('tenancy.features / tenancy.plans', () => {
         planLabel: 'Profesional',
         features: ['agenda', 'reportes'],
         limits: { usuarios: 10 },
+      });
+    });
+    // Sin plan guardado: /me dice el plan efectivo (defaultPlan), no null.
+    await tenancy.run('sin-plan', async () => {
+      const me = JSON.parse((await tenancy.http.handle(get('/tenancy/me')))!.body as string);
+      expect(me).toMatchObject({
+        plan: 'basico',
+        planLabel: 'Básico',
+        features: ['agenda', 'caja'],
       });
     });
   });
@@ -390,5 +413,58 @@ describe('fonts', () => {
     expect(() => createTestTenancy({ theme: { fonts, defaults: { font: 'Comic Sans' } } })).toThrow(
       /not in theme.fonts/,
     );
+  });
+
+  it('matches fonts without case, saves the catalog name and only validates a changed font', async () => {
+    const { tenancy } = createTestTenancy({ theme: { fonts } });
+    expect(
+      (await tenancy.tenants.create({ id: 'mayus', theme: { font: 'inter' } })).theme?.font,
+    ).toBe('Inter');
+    expect((await tenancy.theme.update('mayus', { font: 'GEORGIA' })).font).toBe('Georgia');
+    expect(new FontCatalog(fonts).canonical('marca')).toBe('Marca');
+    expect(new FontCatalog().canonical('lo que sea')).toBe('lo que sea');
+
+    // Tema guardado antes de la lista ('arial' en minúsculas): se puede seguir editando.
+    const repo = new InMemoryTenantRepository();
+    await repo.insert(
+      Tenant.create({
+        id: TenantId.create('vieja'),
+        name: 'Vieja',
+        theme: Theme.create({ primary: '#000000', secondary: '#64748B', font: 'arial' }),
+        now: new Date(),
+      }),
+    );
+    const { tenancy: after } = createTestTenancy({
+      theme: {
+        fonts: [...fonts, { family: 'Arial', source: 'system', fallback: 'Helvetica, sans-serif' }],
+      },
+      tenants: repo,
+      http: { theme: true },
+    });
+    // Misma fuente con otras mayúsculas: pasa a la de la lista.
+    expect((await after.theme.update('vieja', { font: 'ARIAL', primary: '#111111' })).font).toBe(
+      'Arial',
+    );
+    await expect(after.theme.update('vieja', { font: 'Comic Sans' })).rejects.toThrow(
+      InvalidThemeError,
+    );
+
+    // Una fuente que no está en la lista se conserva si no cambia.
+    await repo.insert(
+      Tenant.create({
+        id: TenantId.create('rara'),
+        name: 'Rara',
+        theme: Theme.create({ primary: '#000000', secondary: '#64748B', font: 'Fuente Rara' }),
+        now: new Date(),
+      }),
+    );
+    expect((await after.theme.update('rara', { font: 'fuente rara', radius: 'lg' })).font).toBe(
+      'Fuente Rara',
+    );
+    const css = await after.run(
+      'vieja',
+      async () => (await after.http.handle(get('/tenancy/theme.css')))!.body,
+    );
+    expect(css).toContain("--font-main: 'Arial', Helvetica, sans-serif;");
   });
 });

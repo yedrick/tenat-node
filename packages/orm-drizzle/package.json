@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/orm-drizzle",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Drizzle ORM integration for tenancy-node: tenancy.drizzle(schema) per tenant and a Drizzle migrator",
   "keywords": [
     "multi-tenancy",

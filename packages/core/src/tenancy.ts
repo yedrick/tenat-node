@@ -605,11 +605,12 @@ export class Tenancy {
     const resolveFeatures = (tenant?: Tenant): ResolvedFeatures => {
       const target = tenant ?? this.currentOrFail();
       const resolved = catalog.resolve(target.plan, target.features);
-      if (!resolved.knownPlan && resolved.plan !== null && !this.warnedPlans.has(resolved.plan)) {
-        this.warnedPlans.add(resolved.plan);
+      const unknown = resolved.unknownPlan;
+      if (unknown !== null && !this.warnedPlans.has(unknown)) {
+        this.warnedPlans.add(unknown);
         this.logger.warn(
-          { tenantId: target.id.value, operation: 'features.resolve', plan: resolved.plan },
-          `Tenant "${target.id.value}" has plan "${resolved.plan}", which is not configured: it gets no plan features`,
+          { tenantId: target.id.value, operation: 'features.resolve', plan: unknown },
+          `Tenant "${target.id.value}" has plan "${unknown}", which is not configured: using ${resolved.plan === null ? 'no plan' : `the default plan "${resolved.plan}"`}`,
         );
       }
       return resolved;

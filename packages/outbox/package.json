@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/outbox",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Transactional outbox and relay for tenancy-node events (at-least-once, SKIP LOCKED, dead-letter)",
   "keywords": [
     "multi-tenancy",

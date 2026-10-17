@@ -135,8 +135,20 @@ export function billingRepositoryContract(name: string, factory: Factory<Billing
       const p1 = payment({});
       const p2 = payment({ amountCents: 10050, paidAt: at(6), reference: null, recordedBy: null });
       const p3 = payment({ invoiceId: c.id, tenantId: 'tigre' });
-      for (const p of [p1, p2, p3]) await repo.insertPayment(p);
-      expect(await repo.listPayments({ invoiceId: a.id })).toEqual([p2, p1]);
+      for (const p of [p1, p2, p3]) expect(await repo.insertPayment(p)).toBe(true);
+      // Mismo provider + providerRef: no se guarda dos veces (webhook repetido).
+      const gw = payment({ provider: 'qr', providerRef: 'qr_1', reference: null, paidAt: at(1) });
+      expect(await repo.insertPayment(gw)).toBe(true);
+      expect(await repo.insertPayment({ ...gw, id: id() })).toBe(false);
+      const other = { ...gw, id: id(), provider: 'stripe' };
+      expect(await repo.insertPayment(other)).toBe(true);
+      expect((await repo.listPayments({ invoiceId: a.id })).map((p) => p.id)).toEqual([
+        p2.id,
+        p1.id,
+        other.id,
+        gw.id,
+      ]);
+      expect((await repo.listPayments({ invoiceId: a.id }))[0]).toEqual(p2);
       expect(await repo.listPayments({ tenantId: 'tigre' })).toEqual([p3]);
       expect(await repo.listPayments({ tenantId: 'bolivar', limit: 1 })).toEqual([p2]);
     });

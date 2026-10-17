@@ -256,8 +256,15 @@ describe('tenancy.billing', () => {
     expect(await hook({ type: 'otro' })).toEqual({ handled: false });
     expect(await hook({ type: 'pagado', ref: 'desconocido' })).toEqual({ handled: false });
     expect((await hook({ type: 'rechazado', ref: session.providerRef })).handled).toBe(true);
-    const paid = await hook({ type: 'pagado', ref: session.providerRef, trx: 'BNB-77' });
-    expect(paid.invoice).toMatchObject({ status: 'paid' });
+    // Dos webhooks iguales en paralelo: un solo pago.
+    await Promise.all([
+      hook({ type: 'pagado', ref: session.providerRef, trx: 'BNB-77' }),
+      hook({ type: 'pagado', ref: session.providerRef, trx: 'BNB-77' }),
+    ]);
+    expect((await tenancy.billing.getInvoice(invoice!.id))!).toMatchObject({
+      status: 'paid',
+      paidCents: 15050,
+    });
     // La pasarela reintenta: no se registra dos veces.
     await hook({ type: 'pagado', ref: session.providerRef });
     const payments = await tenancy.billing.payments({ tenantId: 'clinica' });
@@ -271,6 +278,16 @@ describe('tenancy.billing', () => {
     expect(events.filter((e) => e.type === 'billing.payment_failed')).toHaveLength(1);
 
     await expect(tenancy.billing.checkout(invoice!.id)).rejects.toThrow(/paid/);
+    // Dos pagos manuales parciales en paralelo: la suma no se pisa.
+    const extra = await tenancy.billing.invoice('clinica', { description: 'Extra', amount: 100 });
+    await Promise.all([
+      tenancy.billing.pay(extra.id, { amount: 40 }),
+      tenancy.billing.pay(extra.id, { amount: 60 }),
+    ]);
+    expect(await tenancy.billing.getInvoice(extra.id)).toMatchObject({
+      status: 'paid',
+      paidCents: 10000,
+    });
     await expect(tenancy.billing.webhook('stripe', { headers: {}, body: '' })).rejects.toThrow(
       /not configured/,
     );

@@ -57,7 +57,9 @@ export class CreateTenantUseCase {
   async execute(input: CreateTenantInput): Promise<Tenant> {
     const id = TenantId.create(input.id);
     this.catalog.validatePlan(input.plan);
-    if (input.theme?.font) this.fonts.validate(input.theme.font);
+    const theme = input.theme?.font
+      ? { ...input.theme, font: this.fonts.canonical(input.theme.font) }
+      : input.theme;
     const features = this.catalog.normalizeOverrides(input.features);
     const domainNames = normalizeDomainList(input.domain);
 
@@ -73,7 +75,7 @@ export class CreateTenantUseCase {
       plan: input.plan ?? null,
       features,
       data: input.data ?? {},
-      theme: input.theme ? Theme.create(this.themeDefaults).merge(input.theme) : null,
+      theme: theme ? Theme.create(this.themeDefaults).merge(theme) : null,
       now,
     });
 

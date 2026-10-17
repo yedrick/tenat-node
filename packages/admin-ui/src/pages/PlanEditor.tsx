@@ -113,7 +113,10 @@ export function PlanEditor({ detail, canEdit }: { detail: TenantDetail; canEdit:
             <IconAlert className="mt-0.5 shrink-0" />
             <p>
               El plan <span className="font-mono">{t.plan}</span> ya no está en la configuración:
-              este tenant solo tiene sus módulos sueltos. Elige un plan.
+              {p.defaultPlan
+                ? ` este tenant usa el plan por defecto (${p.defaultPlan}) y sus módulos sueltos.`
+                : ' este tenant solo tiene sus módulos sueltos.'}{' '}
+              Elige un plan.
             </p>
           </div>
         )}

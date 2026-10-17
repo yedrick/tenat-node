@@ -143,24 +143,31 @@ export class KyselyBillingRepository implements BillingRepository {
     return { items: rows.map(invoiceFromRow), total: Number(count.total), page, perPage };
   }
 
-  async insertPayment(p: Payment): Promise<void> {
-    await this.db
-      .insertInto('billing_payments')
-      .values({
-        id: p.id,
-        invoice_id: p.invoiceId,
-        tenant_id: p.tenantId,
-        amount_cents: p.amountCents,
-        currency: p.currency,
-        method: p.method,
-        reference: p.reference,
-        provider: p.provider,
-        provider_ref: p.providerRef,
-        paid_at: p.paidAt,
-        recorded_by: p.recordedBy,
-        created_at: p.createdAt,
-      })
-      .execute();
+  async insertPayment(p: Payment): Promise<boolean> {
+    try {
+      await this.db
+        .insertInto('billing_payments')
+        .values({
+          id: p.id,
+          invoice_id: p.invoiceId,
+          tenant_id: p.tenantId,
+          amount_cents: p.amountCents,
+          currency: p.currency,
+          method: p.method,
+          reference: p.reference,
+          provider: p.provider,
+          provider_ref: p.providerRef,
+          paid_at: p.paidAt,
+          recorded_by: p.recordedBy,
+          created_at: p.createdAt,
+        })
+        .execute();
+    } catch (error) {
+      // UNIQUE(provider, provider_ref): el mismo pago de la pasarela ya está registrado.
+      if (this.central.driver.isUniqueViolation(error)) return false;
+      throw error;
+    }
+    return true;
   }
 
   async listPayments(query: {

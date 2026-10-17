@@ -68,6 +68,8 @@ export interface ResolvedFeatures {
   planLabel: string | null;
   /** `false` si el tenant tiene un plan que ya no existe en la configuración. */
   knownPlan: boolean;
+  /** El plan guardado que no existe en la configuración (se usa `defaultPlan` en su lugar). */
+  unknownPlan: string | null;
   features: string[];
   limits: Record<string, number | null>;
 }
@@ -200,11 +202,14 @@ export class PlanCatalog {
         plan,
         planLabel: null,
         knownPlan: true,
+        unknownPlan: null,
         features: [...this.featureMap.keys()],
         limits: { ...overrides?.limits },
       };
     }
-    const id = plan ?? this.defaultPlan;
+    // Un plan que ya no existe se trata como "sin plan": usa defaultPlan (o ninguno).
+    const unknown = plan !== null && !this.planMap.has(plan) ? plan : null;
+    const id = unknown === null ? (plan ?? this.defaultPlan) : this.defaultPlan;
     const def = id === null ? undefined : this.planMap.get(id);
     const set = new Set(def ? this.planFeatures(def) : []);
     for (const f of overrides?.add ?? []) if (this.featureMap.has(f)) set.add(f);
@@ -212,7 +217,8 @@ export class PlanCatalog {
     return {
       plan: id,
       planLabel: def?.label ?? null,
-      knownPlan: id === null || def !== undefined,
+      knownPlan: unknown === null,
+      unknownPlan: unknown,
       // Orden del catálogo: estable para menús y ETags.
       features: [...this.featureMap.keys()].filter((f) => set.has(f)),
       limits: { ...def?.limits, ...overrides?.limits },

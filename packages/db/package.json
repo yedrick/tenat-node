@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/db",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Kysely integration for tenancy-node: central tables, repositories, pools, provisioning and migrations",
   "keywords": [
     "multi-tenancy",

@@ -172,6 +172,7 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')(
         plan: 'basico',
         planLabel: 'Básico',
         knownPlan: true,
+        unknownPlan: null,
         features: ['agenda', 'caja', 'reportes'],
         limits: { usuarios: 5 },
       });
@@ -253,10 +254,15 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')(
         'consent',
         'data.otro',
       ]);
-      // Cuarto envío desde la misma IP en la ventana: bloqueado.
+      // El envío con errores no gastó un intento: el tercero válido entra...
+      const third = await call('POST', '/leads', {
+        body: { ...form, name: 'Carla Ríos', company: 'Clínica Norte', email: 'carla@example.com' },
+      });
+      expect(third.status).toBe(201);
+      // ...y el siguiente desde la misma IP en la ventana queda bloqueado.
       const limited = await call('POST', '/leads', { body: form });
       expect(limited.status).toBe(429);
-      expect(leadEvents).toHaveLength(1);
+      expect(leadEvents).toHaveLength(2);
 
       // Plan desconocido: la solicitud se guarda sin plan.
       const lead = await admin.api.leads.create({
@@ -268,8 +274,8 @@ describe.skipIf(process.env.TENANCY_SKIP_DB_TESTS === '1')(
 
       const support = await login('soporte@tuapp.com');
       const list = await call('GET', '/leads', { headers: support });
-      expect(list.body.total).toBe(2);
-      expect(list.body.counts).toEqual({ new: 2, contacted: 0, converted: 0, discarded: 0 });
+      expect(list.body.total).toBe(3);
+      expect(list.body.counts).toEqual({ new: 3, contacted: 0, converted: 0, discarded: 0 });
       const first = list.body.items.find((l: { name: string }) => l.name === 'Ana Pérez');
       expect(first).toMatchObject({
         company: 'Dental Sur',

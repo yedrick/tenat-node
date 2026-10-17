@@ -605,11 +605,30 @@ export function centralMigrations(prefix: string, kind: DialectKind): Record<str
       await scoped(db).schema.dropTable(name).ifExists().execute();
   };
 
+  // 0.11.1: un pago de pasarela (provider + provider_ref) se registra una sola vez, aunque el
+  // webhook llegue repetido y en paralelo. Los pagos manuales (provider_ref NULL) no chocan.
+  const paymentsUniqueUp = async (db: Db): Promise<void> => {
+    let unique = scoped(db)
+      .schema.createIndex(n('uq_payments_provider_ref'))
+      .on('billing_payments')
+      .columns(['provider', 'provider_ref'])
+      .unique();
+    // SQL Server trata NULL como un valor en UNIQUE: índice filtrado.
+    if (d.mssql) unique = unique.where(sql.ref('provider_ref'), 'is not', null);
+    await unique.execute();
+  };
+  const paymentsUniqueDown = async (db: Db): Promise<void> => {
+    let drop = scoped(db).schema.dropIndex(n('uq_payments_provider_ref'));
+    if (d.mysql || d.mssql) drop = drop.on('billing_payments');
+    await drop.execute();
+  };
+
   return {
     '2026_09_25_000001_create_tenancy_tables': { up, down },
     '2026_09_26_000001_outbox_destinations': { up: eventsUp, down: eventsDown },
     '2026_10_17_000001_plans_leads_notifications': { up: plansUp, down: plansDown },
     '2026_10_17_000002_billing': { up: billingUp, down: billingDown },
+    '2026_10_18_000001_billing_payments_unique': { up: paymentsUniqueUp, down: paymentsUniqueDown },
   };
 }
 

@@ -185,8 +185,7 @@ export class TenancyHttpRoutes {
         ...json(200, await this.host.notifications(tenant)),
         headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
       };
-    }
-    else {
+    } else {
       // Un escape `%` mal formado es culpa del cliente: 400, no un URIError (500).
       let relative: string;
       try {
@@ -236,16 +235,20 @@ export class TenancyHttpRoutes {
       id: tenant.id.value,
       theme: { ...theme.toJson(), ...(logo ? { logo } : {}) },
     };
-    const resolved = this.publicFields.some((f) => FEATURE_FIELDS.has(f))
+    const resolved = this.publicFields.some((f) => FEATURE_FIELDS.has(f) || f === 'plan')
       ? this.host.features(tenant)
       : undefined;
     for (const field of this.publicFields) {
       if (field === 'id' || field === 'theme') continue;
-      const value = TENANT_FIELDS.has(field)
-        ? (tenant as unknown as Record<string, unknown>)[field]
-        : resolved && FEATURE_FIELDS.has(field)
-          ? resolved[field as 'features' | 'limits' | 'planLabel']
-          : tenant.data[field];
+      // Con planes, `plan` es el plan efectivo (con defaultPlan), no el guardado.
+      const value =
+        resolved && field === 'plan'
+          ? resolved.plan
+          : TENANT_FIELDS.has(field)
+            ? (tenant as unknown as Record<string, unknown>)[field]
+            : resolved && FEATURE_FIELDS.has(field)
+              ? resolved[field as 'features' | 'limits' | 'planLabel']
+              : tenant.data[field];
       if (value !== undefined) body[field] = value;
     }
     const text = JSON.stringify(body);

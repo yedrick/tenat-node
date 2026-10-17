@@ -32,7 +32,11 @@ export interface BillingRepository {
     page?: number;
     perPage?: number;
   }): Promise<Page<Invoice>>;
-  insertPayment(payment: Payment): Promise<void>;
+  /**
+   * Guarda un pago. Devuelve `false` (sin guardar) si ya hay un pago con el mismo
+   * `provider` + `providerRef`: así un webhook repetido no cobra dos veces.
+   */
+  insertPayment(payment: Payment): Promise<boolean>;
   /** Pagos de una factura o de un tenant, más nuevos primero. */
   listPayments(query: {
     invoiceId?: string;

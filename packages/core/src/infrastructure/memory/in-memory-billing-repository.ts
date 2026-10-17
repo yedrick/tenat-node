@@ -74,7 +74,15 @@ export class InMemoryBillingRepository implements BillingRepository {
   }
 
   async insertPayment(payment: Payment) {
+    if (
+      payment.providerRef !== null &&
+      this.payments.some(
+        (p) => p.provider === payment.provider && p.providerRef === payment.providerRef,
+      )
+    )
+      return false;
     this.payments.push(clone(payment));
+    return true;
   }
 
   async listPayments(query: { invoiceId?: string; tenantId?: string; limit?: number }) {

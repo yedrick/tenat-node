@@ -21,8 +21,16 @@ export class UpdateThemeUseCase {
   async execute(ref: TenantRef, patch: ThemePatch | null): Promise<Theme> {
     const tenant = await requireTenant(this.tenants, ref);
     const base = tenant.theme ?? Theme.create(this.themeDefaults);
-    const next = patch === null ? null : base.merge(patch);
-    if (patch?.font) this.fonts.validate(patch.font);
+    // La fuente se valida solo si cambia: un tema guardado antes de la lista (o con otras
+    // mayúsculas) se puede seguir editando sin tocar la fuente.
+    let fixed = patch;
+    if (patch?.font) {
+      const same = base.font !== undefined && base.font.toLowerCase() === patch.font.toLowerCase();
+      const font =
+        same && !this.fonts.get(patch.font) ? base.font! : this.fonts.canonical(patch.font);
+      fixed = { ...patch, font };
+    }
+    const next = fixed === null ? null : base.merge(fixed);
 
     if (next === null ? tenant.theme === null : tenant.theme?.equals(next)) {
       return next ?? base;

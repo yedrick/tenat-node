@@ -1,5 +1,17 @@
 # @tenancy-node/admin-ui
 
+## 0.11.1
+
+### Patch Changes
+
+- Correcciones de la revisión de IONIX sobre la 0.11:
+
+  - `core`: un tenant con un plan que ya no está en la configuración usa `defaultPlan` (antes quedaba sin módulos y sin límites); `ResolvedFeatures.unknownPlan` dice cuál era. `/tenancy/me` devuelve el plan efectivo (con `defaultPlan`) en `plan`.
+  - `core`: las fuentes de `theme.fonts` se buscan sin distinguir mayúsculas y se guardan con el nombre de la lista (`arial` → `Arial`); la fuente solo se valida si cambia, así un tema guardado antes de la lista se puede seguir editando.
+  - `core` + `db`: un pago de pasarela (`provider` + `providerRef`) se registra una sola vez aunque el webhook llegue repetido y en paralelo (índice único, migración `2026_10_18_000001_billing_payments_unique`; `BillingRepository.insertPayment` devuelve `false` si ya existía), y lo pagado se recalcula desde la suma de los pagos (dos pagos en paralelo no se pisan).
+  - `admin-api`: el límite del formulario público de solicitudes cuenta solo los envíos válidos (y los del campo trampa): corregir un campo no gasta intentos.
+  - `admin-ui`: la fuente actual se reconoce sin distinguir mayúsculas y el aviso de plan desconocido explica que se usa el plan por defecto.
+
 ## 0.11.0
 
 ### Minor Changes

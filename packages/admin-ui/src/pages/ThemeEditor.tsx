@@ -24,7 +24,7 @@ export function themeVariables(theme: Theme, fonts: readonly FontInfo[] = []): C
       vars[`--color-${key}`] = theme[key] as string;
   if (theme.font)
     vars['--font-main'] =
-      fonts.find((f) => f.family === theme.font)?.stack ??
+      fonts.find((f) => f.family.toLowerCase() === String(theme.font).toLowerCase())?.stack ??
       `'${String(theme.font)}', system-ui, sans-serif`;
   if (theme.radius) vars['--radius'] = RADIUS[String(theme.radius)] ?? '0.5rem';
   return vars as CSSProperties;
@@ -253,7 +253,7 @@ function FontPicker({
             style={{ fontFamily: f.stack }}
             className={cx(
               'rounded-lg border px-3 py-2 text-left transition-colors',
-              value === f.family
+              value.toLowerCase() === f.family.toLowerCase()
                 ? 'border-brand bg-brand/5 ring-2 ring-brand/20'
                 : 'border-line hover:bg-subtle',
             )}
@@ -263,9 +263,10 @@ function FontPicker({
           </button>
         ))}
       </div>
-      {value !== '' && !fonts.some((f) => f.family === value) && (
+      {value !== '' && !fonts.some((f) => f.family.toLowerCase() === value.toLowerCase()) && (
         <p className="text-xs text-warn">
-          "{value}" no está en la lista de fuentes permitidas: elige otra para poder guardar.
+          "{value}" no está en la lista de fuentes permitidas: puedes guardar otros cambios del
+          tema, pero para cambiar la fuente elige una de la lista.
         </p>
       )}
     </div>

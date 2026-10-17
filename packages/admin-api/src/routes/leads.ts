@@ -99,9 +99,11 @@ export function leadRoutes(ctx: AdminContext) {
               throw new AdminHttpError(429, 'ADMIN_TOO_MANY_REQUESTS', 'Too many requests', {
                 retryAfter: limiter!.retryAfterSeconds(key),
               });
-            limiter!.fail(key);
-            // Bot: se responde igual que a un humano, pero no se guarda nada.
-            if (b.website) return { status: 201, body: { ok: true } };
+            // Bot: se responde igual que a un humano, pero no se guarda nada (y cuenta para el límite).
+            if (b.website) {
+              limiter!.fail(key);
+              return { status: 201, body: { ok: true } };
+            }
             const errors: { path: string; message: string }[] = [];
             if (!b.email && !b.phone)
               errors.push({ path: 'email', message: 'Email or phone is required' });
@@ -117,6 +119,8 @@ export function leadRoutes(ctx: AdminContext) {
                 'Invalid request body',
                 errors,
               );
+            // Solo cuentan los envíos válidos: corregir un campo no gasta intentos.
+            limiter!.fail(key);
             await createLead(ctx, {
               name: b.name,
               company: b.company ?? null,

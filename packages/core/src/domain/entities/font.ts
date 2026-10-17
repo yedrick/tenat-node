@@ -48,9 +48,10 @@ export class FontCatalog {
     const fonts = new Map<string, ResolvedFont>();
     for (const def of definitions) {
       const font = resolveFont(def);
-      if (fonts.has(font.family))
+      const key = font.family.toLowerCase();
+      if (fonts.has(key))
         throw new InvalidConfigError(`theme.fonts: duplicated family "${font.family}"`);
-      fonts.set(font.family, font);
+      fonts.set(key, font);
     }
     this.fonts = fonts;
   }
@@ -63,17 +64,28 @@ export class FontCatalog {
     return [...this.fonts.values()].map((f) => ({ ...f, weights: [...f.weights] }));
   }
 
+  /** Busca sin distinguir mayúsculas (`arial` → `Arial`). */
   get(family: string): ResolvedFont | undefined {
-    return this.fonts.get(family);
+    return this.fonts.get(family.toLowerCase());
   }
 
-  /** Lanza `InvalidThemeError` si hay lista y la fuente no está en ella. */
-  validate(family: string | undefined): void {
-    if (family === undefined || !this.restricted || this.fonts.has(family)) return;
+  /**
+   * Nombre de la fuente como está en la lista (`ARIAL` → `Arial`). Lanza `InvalidThemeError` si
+   * hay lista y la fuente no está en ella. Sin lista, la devuelve tal cual.
+   */
+  canonical(family: string): string {
+    if (!this.restricted) return family;
+    const font = this.get(family);
+    if (font) return font.family;
     throw new InvalidThemeError(
       'font',
-      `"${family}" is not an allowed font (${[...this.fonts.keys()].join(', ')})`,
+      `"${family}" is not an allowed font (${[...this.fonts.values()].map((f) => f.family).join(', ')})`,
     );
+  }
+
+  /** Lanza `InvalidThemeError` si hay lista y la fuente no está en ella (sin distinguir mayúsculas). */
+  validate(family: string | undefined): void {
+    if (family !== undefined) this.canonical(family);
   }
 }
 

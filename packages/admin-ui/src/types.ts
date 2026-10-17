@@ -76,6 +76,8 @@ export interface ResolvedPlan {
   planLabel: string | null;
   /** `false` si el plan del tenant ya no está en la configuración. */
   knownPlan: boolean;
+  /** Plan guardado que ya no existe (se usa el plan por defecto). */
+  unknownPlan?: string | null;
   features: string[];
   limits: Record<string, number | null>;
 }

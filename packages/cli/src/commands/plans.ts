@@ -130,8 +130,10 @@ export const tenantPlanCommand: Command = {
     out.line(
       `Plan:    ${resolved.plan ?? '—'}${resolved.planLabel ? ` (${resolved.planLabel})` : ''}`,
     );
-    if (!resolved.knownPlan)
-      out.warn(`El plan "${resolved.plan}" no está en la configuración: no da módulos.`);
+    if (resolved.unknownPlan)
+      out.warn(
+        `El plan "${resolved.unknownPlan}" no está en la configuración: ${resolved.plan ? `usa el plan por defecto (${resolved.plan})` : 'no da módulos'}.`,
+      );
     out.line(`Módulos: ${resolved.features.join(', ') || '—'}`);
     out.line(`Límites: ${formatLimits(resolved.limits)}`);
     if (changed.features) {

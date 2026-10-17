@@ -1,6 +1,6 @@
 {
   "name": "@tenancy-node/transport-redis-streams",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "description": "Redis Streams event transport and consumer for tenancy-node",
   "keywords": [
     "multi-tenancy",
